@@ -97,6 +97,46 @@ Each result should link back to:
 - evidence span IDs
 - policy/document references
 
+## Product Modules
+
+The core evaluation flow is intentionally small. Higher-level product capabilities compose
+around it:
+
+```text
+Case -> Run + Trace -> Evaluator -> Result
+          ^                            |
+          |                            v
+        Queue                     Experiment
+                                       |
+                                       v
+                              Optimizer + Lineage
+```
+
+### Experiment
+
+Owns experiment definitions, controlled variant assignment, paired statistical analysis,
+comparison reports, and winner or release decisions. It uses `result/compare.py` as a
+low-level comparison utility.
+
+### Queue
+
+Owns public reservation and queue APIs, queue state, resource-key allocation, cancellation,
+and start-time estimates. `run/scheduler.py` remains an internal execution abstraction. The
+POC may use a local worker, while production can integrate an external scheduler through an
+adapter rather than replacing it.
+
+### Optimizer
+
+Consumes failed results and trace evidence to cluster badcases, form root-cause hypotheses,
+and produce prioritized recommendations. Initial versions require human review and never
+modify target agents automatically.
+
+### Lineage
+
+Tracks immutable relationships among datasets, cases, evaluators, prompts, models, agents,
+skills, runs, experiments, and results. `case/versioning.py` owns case revisions and registers
+those revisions in the broader lineage graph.
+
 ## Entry Points
 
 ```text

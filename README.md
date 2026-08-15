@@ -28,11 +28,15 @@ Case -> Run -> Trace -> Evaluator -> Result
 
 ```text
 src/agentgate/
-  case/          # Cases, datasets, customer/public benchmark import
+  case/          # Cases, datasets, custom/public benchmark import
   run/           # Run engine, targets, lifecycle
   trace/         # Trace model, OTel import, execution graph
   evaluator/     # Built-in and external evaluators
   result/        # Results, reports, compare, release gates
+  experiment/    # Controlled A/B experiments and statistical decisions
+  queue/         # Public reservation and queue orchestration
+  optimizer/     # Badcase analysis and human-reviewed recommendations
+  lineage/       # Asset versions and dependency lineage
   control/       # Shared operations used by CLI/API/Web
   cli/           # Command-line entry point
   server/        # REST API entry point
@@ -42,6 +46,11 @@ docs/            # Design docs
 examples/        # Demo agents and datasets
 tests/           # Test suite
 ```
+
+The five core evaluation objects remain `Case -> Run + Trace -> Evaluator -> Result`.
+Experiment, queue, optimizer, and lineage are product modules composed around that core;
+they do not replace it. See `docs/capability-mapping.md` for capability ownership and
+implementation status.
 
 ## First Demo Target
 
