@@ -41,7 +41,7 @@ src/agentgate/
   cli/           # Command-line entry point
   server/        # REST API entry point
 
-web/             # Future Vue/TypeScript UI
+web/             # Vue/TypeScript evaluation UI
 docs/            # Design docs
 examples/        # Demo agents and datasets
 tests/           # Test suite
@@ -61,6 +61,6 @@ The first demo should be a loan approval agent:
 - Approval may require human review.
 - Evaluators check tool calls, tool arguments, workflow policy, and final state.
 
-## Status
+## P1 Demo
 
-Early scaffold. Core models and contracts should be finalized before building the Web UI or distributed runtime.
+The repository contains a working SQLite-backed loan-approval evaluation slice with a deterministic target, CLI, REST/OTLP HTTP endpoints, and Chinese Vue UI. See `docs/progress.md` for setup, verification, acceptance expectations, and deferred scope.
