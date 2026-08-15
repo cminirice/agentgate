@@ -8,5 +8,8 @@ build/
 *.egg-info/
 .env
 .DS_Store
+*.db
+web/test-results/
+web/playwright-report/
 node_modules/
 web/dist/
