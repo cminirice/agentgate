@@ -7,6 +7,7 @@ working notes, and implementation plans live under the module that owns them.
 
 - [Product requirements](product-requirements-zh.md)
 - [Implementation roadmap](implementation-roadmap.md)
+- [Demo setup and test guide](demo-test-guide.md)
 - [System architecture](arch.md)
 - [Capability mapping](capability-mapping.md)
 - [Verified progress](progress.md)

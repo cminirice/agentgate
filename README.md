@@ -63,4 +63,4 @@ The first demo should be a loan approval agent:
 
 ## P1 Demo
 
-The repository contains a working SQLite-backed loan-approval evaluation slice with a deterministic target, CLI, REST/OTLP HTTP endpoints, and Chinese Vue UI. See `docs/progress.md` for setup, verification, acceptance expectations, and deferred scope.
+The repository contains a working SQLite-backed loan-approval evaluation slice with a deterministic target, CLI, REST/OTLP HTTP endpoints, and Chinese Vue UI. See `docs/progress.md` for verified implementation status and `docs/demo-test-guide.md` for the complete setup and test walkthrough.
