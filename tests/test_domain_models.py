@@ -2,7 +2,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from agentgate.domain import (
-    Case, Dataset, Equals, EvaluatorSpec, RuleEvaluatorSpec, StateExpectation,
+    Case, CaseTurn, Equals, EvaluatorSpec, RuleEvaluatorSpec, StateExpectation,
     WithinRange,
 )
 
@@ -11,11 +11,14 @@ def test_expectation_and_evaluator_discriminated_unions():
     case = Case(
         id="case",
         name="case",
-        input={},
-        expectations=({"kind": "state", "path": "status",
-                       "condition": {"kind": "equals", "expected": "ok"}},),
+        turns=(CaseTurn(
+            id="turn",
+            input={"message": "hello"},
+            expectations=({"kind": "state", "path": "status",
+                           "condition": {"kind": "equals", "expected": "ok"}},),
+        ),),
     )
-    assert isinstance(case.expectations[0], StateExpectation)
+    assert isinstance(case.turns[0].expectations[0], StateExpectation)
     spec = TypeAdapter(EvaluatorSpec).validate_python({
         "kind": "rule", "id": "state", "name": "state", "version": "1",
         "dimension": "state", "metric": "state_match",

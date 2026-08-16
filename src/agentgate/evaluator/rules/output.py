@@ -1,8 +1,8 @@
-"""Final-state Rule evaluator."""
+"""Final-output Rule evaluator."""
 
 from __future__ import annotations
 
-from agentgate.domain import FailureStage, Kind, MethodRef, Outcome, StateExpectation
+from agentgate.domain import FailureStage, Kind, MethodRef, Outcome, OutputExpectation
 
 from ..base import Evaluator
 from ..models import CheckDraft, Evaluation, FailureCandidate
@@ -11,17 +11,17 @@ from ..registry import register_evaluator, resolve_operator
 
 
 @register_evaluator
-class FinalStateEvaluator(Evaluator):
+class FinalOutputEvaluator(Evaluator):
     kind = Kind.RULE
-    evaluator_type = "final_state"
+    evaluator_type = "final_output"
 
     def applies_to(self, spec, turn) -> bool:
-        return any(isinstance(item, StateExpectation) for item in turn.expectations)
+        return any(isinstance(item, OutputExpectation) for item in turn.expectations)
 
     def evaluate(self, spec, turn, trace, resolve) -> Evaluation:
         checks = []
         for expectation in (
-            item for item in turn.expectations if isinstance(item, StateExpectation)
+            item for item in turn.expectations if isinstance(item, OutputExpectation)
         ):
             observation = observe(trace, expectation)
             actual = observation.values[0]
@@ -31,23 +31,19 @@ class FinalStateEvaluator(Evaluator):
                 operator_version="1",
                 condition_kind=expectation.condition.kind,
             )
-            outcome = resolve_operator(operator_name, "1")(actual, expectation.condition)
-            span_id = observation.span_ids[0] if observation.span_ids else None
+            comparison = resolve_operator(operator_name, "1")(actual, expectation.condition)
             checks.append(CheckDraft(
-                name=expectation.name or f"最终状态：{expectation.path}",
+                name=expectation.name or f"最终输出：{expectation.path or '完整输出'}",
                 expectation_id=expectation.id,
-                outcome=Outcome.PASS if outcome.passed else Outcome.FAIL,
-                score=1.0 if outcome.passed else 0.0,
-                reason=f"{expectation.path} 符合预期" if outcome.passed else outcome.reason,
+                outcome=Outcome.PASS if comparison.passed else Outcome.FAIL,
+                score=1.0 if comparison.passed else 0.0,
+                reason="最终输出符合预期" if comparison.passed else comparison.reason,
                 expected=expectation.condition.model_dump(mode="json"),
                 actual=None if actual is MISSING else actual,
                 actual_missing=actual is MISSING,
                 methods=(method,),
-                span_ids=(span_id,) if span_id else (),
-                failure=None if outcome.passed else FailureCandidate(
-                    stage=FailureStage.FINAL_STATE,
-                    span_id=span_id,
-                    at_trace_completion=span_id is None,
+                failure=None if comparison.passed else FailureCandidate(
+                    stage=FailureStage.FINAL_OUTPUT, at_trace_completion=True
                 ),
             ))
         return Evaluation(checks=tuple(checks))

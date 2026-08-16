@@ -24,6 +24,7 @@ LABELS = {
     "forbidden_tool_compliance": "禁用工具合规率",
     "tool_argument_accuracy": "工具参数准确率",
     "final_state_match": "最终状态匹配率",
+    "final_output_match": "最终输出匹配率",
     "policy_compliance": "策略合规率",
 }
 

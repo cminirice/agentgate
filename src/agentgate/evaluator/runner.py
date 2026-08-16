@@ -1,4 +1,4 @@
-"""Evaluator execution with memoization, dependency checks, and error Results."""
+"""Evaluator execution with per-turn checks, memoization, and error Results."""
 
 from __future__ import annotations
 
@@ -75,12 +75,23 @@ def evaluate_case(
         spec = by_id[spec_id]
         try:
             implementation = resolve_evaluator(spec)
-            if implementation.applies_to(spec, case):
-                evaluation: Any = implementation.evaluate(spec, case, trace, resolve)
-                if not isinstance(evaluation, Evaluation):
+            checks = []
+            judge_evidence = None
+            for turn in case.turns:
+                turn_trace = trace.for_turn(turn.id)
+                if not implementation.applies_to(spec, turn):
+                    continue
+                turn_evaluation: Any = implementation.evaluate(
+                    spec, turn, turn_trace, resolve
+                )
+                if not isinstance(turn_evaluation, Evaluation):
                     raise TypeError("evaluator returned malformed Evaluation")
-            else:
-                evaluation = Evaluation(checks=())
+                checks.extend(
+                    check if check.turn_id else check.model_copy(update={"turn_id": turn.id})
+                    for check in turn_evaluation.checks
+                )
+                judge_evidence = turn_evaluation.judge_evidence or judge_evidence
+            evaluation = Evaluation(checks=tuple(checks), judge_evidence=judge_evidence)
             result = calculate_result(spec, trace.run_id, case.id, trace, evaluation)
         except Exception as exc:
             result = _error_result(spec, case, trace, exc)

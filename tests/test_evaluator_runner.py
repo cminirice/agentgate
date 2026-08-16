@@ -1,8 +1,8 @@
 from agentgate.domain import (
-    Case, Dimension, Kind, Outcome, RuleEvaluatorSpec, SpanKind, Trace, TraceSpan,
+    Case, CaseTurn, Dimension, Kind, Outcome, RuleEvaluatorSpec, Trace,
 )
 from agentgate.evaluator.base import Evaluator
-from agentgate.evaluator.models import CheckDraft, Evaluation
+from agentgate.evaluator.models import Evaluation
 from agentgate.evaluator.registry import register_evaluator
 from agentgate.evaluator.runner import evaluate_case
 
@@ -12,7 +12,7 @@ class CrashingEvaluator(Evaluator):
     kind = Kind.RULE
     evaluator_type = "test_crash"
 
-    def evaluate(self, spec, case, trace, resolve):
+    def evaluate(self, spec, turn, trace, resolve):
         raise RuntimeError("provider token=secret-value")
 
 
@@ -21,7 +21,7 @@ class TimeoutEvaluator(Evaluator):
     kind = Kind.RULE
     evaluator_type = "test_timeout"
 
-    def evaluate(self, spec, case, trace, resolve):
+    def evaluate(self, spec, turn, trace, resolve):
         raise TimeoutError("too slow")
 
 
@@ -30,7 +30,7 @@ class MalformedEvaluator(Evaluator):
     kind = Kind.RULE
     evaluator_type = "test_malformed"
 
-    def evaluate(self, spec, case, trace, resolve):
+    def evaluate(self, spec, turn, trace, resolve):
         return {"not": "an Evaluation"}
 
 
@@ -39,7 +39,7 @@ class HealthyEvaluator(Evaluator):
     kind = Kind.RULE
     evaluator_type = "test_healthy"
 
-    def evaluate(self, spec, case, trace, resolve):
+    def evaluate(self, spec, turn, trace, resolve):
         return Evaluation(checks=())
 
 
@@ -53,8 +53,15 @@ def spec(evaluator_type):
     )
 
 
+def simple_case():
+    return Case(
+        id="case", name="case",
+        turns=(CaseTurn(id="turn", input={"message": "hello"}),),
+    )
+
+
 def test_evaluator_errors_are_results_and_are_sanitized():
-    case = Case(id="case", name="case", input={})
+    case = simple_case()
     trace = Trace(run_id="run", case_id="case", spans=())
     results = evaluate_case(
         case, trace, (spec("test_crash"), spec("test_timeout"), spec("test_malformed"))
@@ -68,8 +75,9 @@ def test_evaluator_errors_are_results_and_are_sanitized():
 
 
 def test_independent_evaluator_continues_after_error():
-    case = Case(id="case", name="case", input={})
-    trace = Trace(run_id="run", case_id="case", spans=())
-    results = evaluate_case(case, trace, (spec("test_crash"), spec("test_healthy")))
+    results = evaluate_case(
+        simple_case(), Trace(run_id="run", case_id="case", spans=()),
+        (spec("test_crash"), spec("test_healthy")),
+    )
     assert results[0].outcome == Outcome.ERROR
     assert results[1].outcome == Outcome.NOT_APPLICABLE

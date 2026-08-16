@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Annotated, Any, Literal
+from uuid import uuid4
 
 from pydantic import Field, field_validator, model_validator
 
@@ -80,6 +81,7 @@ Condition = Annotated[
 
 
 class StateExpectation(DomainModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
     kind: Literal["state"] = "state"
     path: str
     condition: Condition
@@ -87,6 +89,7 @@ class StateExpectation(DomainModel):
 
 
 class ToolArgumentExpectation(DomainModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
     kind: Literal["tool_argument"] = "tool_argument"
     tool: str
     path: str
@@ -96,6 +99,7 @@ class ToolArgumentExpectation(DomainModel):
 
 
 class OutputExpectation(DomainModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
     kind: Literal["output"] = "output"
     path: str | None = None
     condition: Condition

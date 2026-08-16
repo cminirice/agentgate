@@ -9,7 +9,9 @@ The P1 loan-approval vertical slice is implemented on `goal/p1-demo`.
   Gate specifications, Runs, and reports. Nested JSON is recursively immutable.
 - RunSnapshot persists the full Dataset, target, evaluator specifications, primary
   evaluator IDs, MetricPlan, GateSpec, and a canonical SHA-256 content hash.
-- `AgentGateRepository` is the persistence boundary; `SQLiteRepository` persists runs, traces, results, and demo business state. A PostgreSQL adapter can implement the same protocol later.
+- `AgentGateRepository` is the persistence boundary; `SQLiteRepository` persists
+  Dataset catalogs and versions, runs, traces, results, and demo business state. A
+  PostgreSQL adapter can implement the same protocol later.
 - The demo target exposes loan approval, credit inquiry, repayment plan, and complaint capabilities. `loan-agent-v1-risky` directly approves the high-risk case; `loan-agent-v2-fixed` sends it to human review.
 - Deterministic execution is the default. An optional OpenAI-compatible provider is isolated behind `AgentProvider`.
 - `LocalScheduler` is the POC executor behind `ExternalSchedulerAdapter`; no production scheduler is included.
@@ -17,9 +19,12 @@ The P1 loan-approval vertical slice is implemented on `goal/p1-demo`.
 - OTLP/HTTP JSON ingestion is available at `POST /v1/traces`; parsing and normalization
   live under `trace/`, while the FastAPI route only delegates. Health is separate at
   `GET /health`. OTLP/gRPC remains an intentionally reserved boundary.
-- The Vue 3, TypeScript, and Element Plus UI uses real API calls for overview, launch, run detail, result summary, and failed-case trace drill-down.
-- Six deterministic Rule evaluators cover routing, required tools, forbidden tools, tool
-  arguments, final state, and policy compliance. LLM Judge and Hybrid have version-1
+- The Vue 3, TypeScript, and Element Plus UI uses real API calls for overview, launch, run
+  detail, result summary, failed-case trace drill-down, and the three-column Dataset/Case
+  workspace. Draft editing, immutable publishing, JSON import/export, and version-aware
+  evaluation all persist through SQLite.
+- Seven deterministic Rule evaluators cover routing, required tools, forbidden tools, tool
+  arguments, final state, final output, and policy compliance. LLM Judge and Hybrid have version-1
   contracts but runtime execution remains P2.
 - Not-applicable checks use `outcome=not_applicable` and `score=null`. Evaluator
   crashes, timeouts, and malformed output use `outcome=error`, fail the Gate closed,
@@ -72,10 +77,10 @@ npm run test:e2e
 
 Current automated evidence:
 
-- Python: 30 focused unit/API/CLI/integration tests pass.
+- Python: 47 focused unit/API/CLI/integration tests pass.
 - Vue TypeScript typecheck: pass.
 - Vue production build: pass.
-- Playwright: desktop and Pixel 7 checks pass. Tests use dedicated ports 18000/15173 and
+- Playwright: 6 desktop and Pixel 7 checks pass. Tests use dedicated ports 18000/15173 and
   a per-run SQLite database, so they never reuse the public demo service or old payloads.
 
 The deterministic acceptance expectation is:

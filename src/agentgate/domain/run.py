@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
 from uuid import uuid4
 
 from pydantic import Field, model_validator
 
 from .base import DomainModel, FrozenJsonObject, content_sha256
-from .case import Dataset
+from .case import DatasetVersion
 from .evaluation import EvaluatorSpec
 from .gate import GateSpec
 from .metric import MetricPlan
@@ -35,7 +34,7 @@ class TargetSnapshot(DomainModel):
 
 
 class RunSnapshot(DomainModel):
-    dataset: Dataset
+    dataset: DatasetVersion
     target: TargetSnapshot
     evaluator_specs: tuple[EvaluatorSpec, ...]
     primary_evaluator_ids: tuple[str, ...]
@@ -56,7 +55,6 @@ class RunSnapshot(DomainModel):
 
     @property
     def evaluators(self) -> tuple[EvaluatorSpec, ...]:
-        """Readable alias used by existing presentation code."""
         return self.evaluator_specs
 
 

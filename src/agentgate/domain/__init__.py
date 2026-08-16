@@ -1,7 +1,10 @@
 """Public AgentGate domain data models."""
 
 from .base import DomainModel, FrozenJsonObject, canonical_json, content_sha256, freeze_json
-from .case import Case, Dataset
+from .case import (
+    Case, CaseCategory, CaseDifficulty, CaseTurn, Dataset, DatasetVersion,
+    DatasetVersionStatus,
+)
 from .evaluation import (
     ChildRef, Dimension, EvaluatorSpec, HybridEvaluatorSpec, JudgeConfig, JudgeEvidence,
     Kind, LlmJudgeEvaluatorSpec, MethodRef, PromptSnapshot, RubricSnapshot,
@@ -20,6 +23,6 @@ from .result import (
     Outcome, Result,
 )
 from .run import Run, RunSnapshot, RunStatus, TargetSnapshot
-from .trace import SpanKind, Trace, TraceSpan
+from .trace import SpanKind, Trace, TraceSpan, TraceTurn
 
 __all__ = [name for name in globals() if not name.startswith("_")]

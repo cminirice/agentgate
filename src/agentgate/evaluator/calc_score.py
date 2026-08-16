@@ -31,9 +31,14 @@ def _finalize_check(draft: CheckDraft, trace: Trace) -> CheckResult:
     )
     return CheckResult(
         name=draft.name,
+        turn_id=draft.turn_id,
+        expectation_id=draft.expectation_id,
         outcome=draft.outcome,
         score=draft.score,
         reason=draft.reason,
+        expected=draft.expected,
+        actual=draft.actual,
+        actual_missing=draft.actual_missing,
         methods=draft.methods,
         evidence=evidence,
         failure_observation=observation,

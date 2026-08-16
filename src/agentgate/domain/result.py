@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_serializer, field_validator, model_validator
 
-from .base import DomainModel
+from .base import DomainModel, freeze_json
 from .evaluation import Dimension, JudgeEvidence, Kind, MethodRef, Severity
 
 
@@ -53,12 +53,27 @@ class EvaluationErrorEvidence(DomainModel):
 class CheckResult(DomainModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
+    turn_id: str | None = None
+    expectation_id: str | None = None
     outcome: Outcome
     score: float | None = Field(default=None, ge=0, le=1)
     reason: str
+    expected: Any = None
+    actual: Any = None
+    actual_missing: bool = False
     methods: tuple[MethodRef, ...] = ()
     evidence: tuple[Evidence, ...] = ()
     failure_observation: FailureObservation | None = None
+
+    @field_validator("expected", "actual", mode="before")
+    @classmethod
+    def freeze_values(cls, value: Any) -> Any:
+        return freeze_json(value)
+
+    @field_serializer("expected", "actual")
+    def serialize_values(self, value: Any) -> Any:
+        from .base import thaw_json
+        return thaw_json(value)
 
     @model_validator(mode="after")
     def validate_outcome_fields(self) -> "CheckResult":

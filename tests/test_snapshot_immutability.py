@@ -3,15 +3,15 @@ import sqlite3
 
 import pytest
 
-from agentgate.domain import Case, GateSpec, MetricPlan, Run, RunSnapshot, TargetSnapshot
-from agentgate.demo.loan import LOAN_DATASET
+from agentgate.domain import Case, CaseTurn, GateSpec, MetricPlan, Run, RunSnapshot, TargetSnapshot
+from agentgate.demo.loan import LOAN_DATASET_VERSION
 from agentgate.evaluator import EVALUATORS
 from agentgate.storage.sqlite import SQLiteRepository
 
 
 def snapshot():
     return RunSnapshot(
-        dataset=LOAN_DATASET,
+        dataset=LOAN_DATASET_VERSION,
         target=TargetSnapshot(name="loan", version="v1", provider="deterministic"),
         evaluator_specs=EVALUATORS,
         primary_evaluator_ids=tuple(item.id for item in EVALUATORS),
@@ -25,14 +25,17 @@ def test_snapshot_is_deeply_immutable_and_hash_is_stable():
     second = RunSnapshot.model_validate(first.model_dump(mode="json"))
     assert first.snapshot_sha256 == second.snapshot_sha256
     with pytest.raises(TypeError):
-        first.dataset.cases[0].input["risk"] = "low"
+        first.dataset.cases[0].turns[0].input["risk"] = "low"
 
 
 def test_mutating_source_data_cannot_change_domain_content():
     source = {"nested": [{"risk": "high"}]}
-    case = Case(id="case", name="case", input=source)
+    case = Case(
+        id="case", name="case",
+        turns=(CaseTurn(id="turn", input=source),),
+    )
     source["nested"][0]["risk"] = "low"
-    assert case.input["nested"][0]["risk"] == "high"
+    assert case.turns[0].input["nested"][0]["risk"] == "high"
 
 
 def test_repository_rejects_tampered_snapshot(tmp_path):

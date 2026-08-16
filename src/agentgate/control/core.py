@@ -1,23 +1,31 @@
 from __future__ import annotations
 
-from agentgate.demo.loan import LOAN_DATASET, LoanAgent
+from agentgate.case import DatasetService
+from agentgate.demo.loan import LOAN_DATASET, LOAN_DATASET_VERSION, LoanAgent
 from agentgate.evaluator import EVALUATORS
 from agentgate.run.core import RunEngine
 from agentgate.storage.base import AgentGateRepository
 
 
 class EvaluationService:
-    """Shared application service used by both CLI and HTTP entry points."""
+    """Shared application service used by CLI, HTTP, and the Web control panel."""
 
     def __init__(self, repository: AgentGateRepository) -> None:
         self.repository = repository
         self.engine = RunEngine(repository)
+        self.dataset_service = DatasetService(repository)
+        self.dataset_service.seed(LOAN_DATASET, LOAN_DATASET_VERSION)
 
-    def launch(self, version: str, dataset_id: str | None = None,
-               evaluator_ids: list[str] | None = None):
+    def launch(
+        self, version: str, dataset_id: str | None = None,
+        dataset_version: int | None = None, evaluator_ids: list[str] | None = None,
+    ):
         dataset_id = dataset_id or LOAN_DATASET.id
-        if dataset_id != LOAN_DATASET.id:
-            raise ValueError(f"unknown dataset: {dataset_id}")
+        dataset = (
+            self.dataset_service.get_version(dataset_id, dataset_version)
+            if dataset_version is not None
+            else self.dataset_service.latest_published(dataset_id)
+        )
         selected = EVALUATORS if evaluator_ids is None else tuple(
             item for item in EVALUATORS if item.id in evaluator_ids
         )
@@ -26,15 +34,25 @@ class EvaluationService:
         unknown = set(evaluator_ids or ()) - {item.id for item in EVALUATORS}
         if unknown:
             raise ValueError(f"unknown evaluators: {', '.join(sorted(unknown))}")
-        return self.engine.run(LOAN_DATASET, LoanAgent(self.repository), version,
-                               evaluators=selected)
+        return self.engine.run(
+            dataset, LoanAgent(self.repository), version, evaluators=selected
+        )
 
     def overview(self) -> dict:
         runs = self.repository.list_runs()
         completed = [run for run in runs if run.status == "completed"]
         latest = self.engine.report(runs[0].id) if runs else None
-        return {"total_runs": len(runs), "completed_runs": len(completed),
-                "case_count": len(LOAN_DATASET.cases), "latest": latest}
+        case_count = sum(
+            len(version.cases)
+            for dataset in self.dataset_service.list_datasets()
+            if (version := self.repository.get_latest_dataset_version(dataset.id)) is not None
+        )
+        return {
+            "total_runs": len(runs),
+            "completed_runs": len(completed),
+            "case_count": case_count,
+            "latest": latest,
+        }
 
     def run_detail(self, run_id: str):
         return self.engine.report(run_id)
@@ -43,24 +61,39 @@ class EvaluationService:
         return self.repository.get_trace(run_id, case_id)
 
     def versions(self) -> list[dict[str, str]]:
-        return [{"id": version, "label": "风险版本" if version.endswith("risky") else "修复版本"}
-                for version in LoanAgent.versions]
+        return [
+            {
+                "id": version,
+                "label": "风险版本" if version.endswith("risky") else "修复版本",
+            }
+            for version in LoanAgent.versions
+        ]
 
     def datasets(self) -> list[dict]:
-        return [{"id": LOAN_DATASET.id, "name": LOAN_DATASET.name,
-                 "version": LOAN_DATASET.version, "case_count": len(LOAN_DATASET.cases),
-                 "description": "仅评估高风险申请是否正确进入人工复核"}]
+        summaries = []
+        for dataset in self.dataset_service.list_datasets():
+            latest = self.repository.get_latest_dataset_version(dataset.id)
+            draft = self.repository.get_dataset_draft(dataset.id)
+            summaries.append({
+                **dataset.model_dump(mode="json"),
+                "version": latest.version if latest else None,
+                "case_count": len(latest.cases) if latest else 0,
+                "has_draft": draft is not None,
+            })
+        return summaries
 
     def evaluators(self) -> list[dict]:
-        return [{
-            "id": item.id,
-            "name": item.name,
-            "kind": item.kind,
-            "version": item.version,
-            "dimension": item.dimension,
-            "metric": item.metric,
-            "severity": item.severity,
-            "evaluator_type": item.evaluator_type,
-            "operator": getattr(item, "operator", None),
-        }
-                for item in EVALUATORS]
+        return [
+            {
+                "id": item.id,
+                "name": item.name,
+                "kind": item.kind,
+                "version": item.version,
+                "dimension": item.dimension,
+                "metric": item.metric,
+                "severity": item.severity,
+                "evaluator_type": item.evaluator_type,
+                "operator": getattr(item, "operator", None),
+            }
+            for item in EVALUATORS
+        ]

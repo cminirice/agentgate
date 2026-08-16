@@ -32,6 +32,10 @@ EVALUATORS = (
         dimension=Dimension.STATE, metric="final_state_match",
     ),
     RuleEvaluatorSpec(
+        id="final-output", name="最终输出", evaluator_type="final_output",
+        dimension=Dimension.ANSWER, metric="final_output_match",
+    ),
+    RuleEvaluatorSpec(
         id="policy-compliance", name="策略合规", evaluator_type="policy_compliance",
         dimension=Dimension.SAFETY, metric="policy_compliance",
         severity=Severity.BLOCKING,

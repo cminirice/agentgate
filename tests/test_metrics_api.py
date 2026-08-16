@@ -7,18 +7,20 @@ def test_config_catalogs_and_real_report_metrics(tmp_path):
     with TestClient(create_app(tmp_path / "metrics.db")) as client:
         datasets = client.get("/api/datasets").json()
         evaluators = client.get("/api/evaluators").json()
-        assert datasets == [{
-            "id": "loan-risk-policy", "name": "高风险贷款策略评估", "version": "1", "case_count": 1,
-            "description": "仅评估高风险申请是否正确进入人工复核",
-        }]
-        assert len(evaluators) == 6
+        assert len(datasets) == 1
+        assert datasets[0]["id"] == "loan-risk-policy"
+        assert datasets[0]["version"] == 1
+        assert datasets[0]["case_count"] == 1
+        assert datasets[0]["has_draft"] is False
+        assert len(evaluators) == 7
         assert {item["kind"] for item in evaluators} == {"rule"}
         assert {item["dimension"] for item in evaluators} == {
-            "routing", "tool_use", "state", "safety",
+            "routing", "tool_use", "state", "answer", "safety",
         }
 
         response = client.post("/api/evaluations", json={
             "version": "loan-agent-v1-risky", "dataset_id": "loan-risk-policy",
+            "dataset_version": 1,
             "evaluator_ids": ["required-tool", "forbidden-tool", "tool-arguments"],
         })
         assert response.status_code == 201
@@ -33,6 +35,9 @@ def test_config_catalogs_and_real_report_metrics(tmp_path):
 def test_launch_rejects_empty_evaluator_selection(tmp_path):
     with TestClient(create_app(tmp_path / "invalid.db")) as client:
         response = client.post("/api/evaluations", json={
-            "version": "loan-agent-v2-fixed", "dataset_id": "loan-risk-policy", "evaluator_ids": [],
+            "version": "loan-agent-v2-fixed",
+            "dataset_id": "loan-risk-policy",
+            "dataset_version": 1,
+            "evaluator_ids": [],
         })
         assert response.status_code == 422

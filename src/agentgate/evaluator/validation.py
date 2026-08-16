@@ -1,8 +1,10 @@
-"""Pre-run validation for a Dataset and selected evaluator definitions."""
+"""Pre-run validation for a DatasetVersion and selected evaluator definitions."""
 
 from __future__ import annotations
 
-from agentgate.domain import Dataset, HybridEvaluatorSpec, Kind, MatchesJsonSchema, RuleEvaluatorSpec
+from agentgate.domain import (
+    DatasetVersion, HybridEvaluatorSpec, Kind, MatchesJsonSchema, RuleEvaluatorSpec,
+)
 
 from .models import (
     DuplicateEvaluatorId, EvaluatorVersionMismatch, InvalidHybridEvaluator,
@@ -12,7 +14,7 @@ from .observations import condition_operator
 from .registry import resolve_evaluator, resolve_operator
 
 
-def validate_evaluation_plan(dataset: Dataset, evaluators: tuple) -> None:
+def validate_evaluation_plan(dataset: DatasetVersion, evaluators: tuple) -> None:
     by_id = {item.id: item for item in evaluators}
     if len(by_id) != len(evaluators):
         raise DuplicateEvaluatorId("evaluator IDs must be unique")
@@ -43,7 +45,8 @@ def validate_evaluation_plan(dataset: Dataset, evaluators: tuple) -> None:
         resolve_evaluator(spec)
 
     for case in dataset.cases:
-        for expectation in case.expectations:
-            if isinstance(expectation.condition, MatchesJsonSchema):
-                raise UnsupportedOperator("JSON Schema evaluation is deferred to P2")
-            resolve_operator(condition_operator(expectation.condition), "1")
+        for turn in case.turns:
+            for expectation in turn.expectations:
+                if isinstance(expectation.condition, MatchesJsonSchema):
+                    raise UnsupportedOperator("JSON Schema evaluation is deferred")
+                resolve_operator(condition_operator(expectation.condition), "1")

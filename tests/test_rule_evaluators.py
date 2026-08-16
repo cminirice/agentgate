@@ -1,23 +1,26 @@
 from agentgate.control.core import EvaluationService
 from agentgate.domain import (
-    Dimension, FailureStage, Kind, Outcome, RuleEvaluatorSpec, SpanKind, Trace, TraceSpan,
+    Dimension, FailureStage, Outcome, RuleEvaluatorSpec, SpanKind, Trace, TraceSpan,
 )
 from agentgate.evaluator.calc_score import calculate_result
 from agentgate.evaluator.models import CheckDraft, Evaluation, FailureCandidate
 from agentgate.storage.sqlite import SQLiteRepository
 
 
-def test_six_rules_keep_details_and_trace_ordered_primary_failure(tmp_path):
+def test_seven_rules_keep_details_and_trace_ordered_primary_failure(tmp_path):
     service = EvaluationService(SQLiteRepository(tmp_path / "rules.db"))
     run = service.launch("loan-agent-v1-risky")
     report = service.run_detail(run.id)
-    assert len(report.results) == 6
+    assert len(report.results) == 7
     by_id = {item.evaluator_id: item for item in report.results}
     assert by_id["skill-routing"].outcome == Outcome.PASS
     assert by_id["tool-arguments"].outcome == Outcome.NOT_APPLICABLE
+    assert by_id["final-output"].outcome == Outcome.NOT_APPLICABLE
     assert by_id["policy-compliance"].primary_failure_step == FailureStage.TOOL_SELECTION
     assert len(by_id["policy-compliance"].checks) == 2
     assert any(item.outcome == Outcome.FAIL for item in by_id["policy-compliance"].checks)
+    assert all(item.turn_id == "high-risk-turn-1" for item in by_id["final-state"].checks)
+    assert by_id["final-state"].checks[0].expected["kind"] == "equals"
 
 
 def test_primary_failure_uses_trace_sequence_not_enum_order():
