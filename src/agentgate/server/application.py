@@ -16,6 +16,8 @@ from agentgate.storage.sqlite import SQLiteRepository
 
 class LaunchRequest(BaseModel):
     version: str
+    dataset_id: str = "loan-demo"
+    evaluator_ids: list[str] | None = None
 
 
 def _otlp_value(value: dict[str, Any]) -> Any:
@@ -71,6 +73,14 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     def versions():
         return service.versions()
 
+    @api.get("/datasets")
+    def datasets():
+        return service.datasets()
+
+    @api.get("/evaluators")
+    def evaluators():
+        return service.evaluators()
+
     @api.get("/runs")
     def runs():
         return repository.list_runs()
@@ -78,7 +88,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @api.post("/evaluations", status_code=201)
     def launch(request: LaunchRequest):
         try:
-            return service.launch(request.version)
+            return service.launch(request.version, request.dataset_id, request.evaluator_ids)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

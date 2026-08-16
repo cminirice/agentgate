@@ -5,7 +5,7 @@ from typing import Protocol
 
 from agentgate.contracts import Case, Run, RunSnapshot, RunStatus, TargetSnapshot, Trace
 from agentgate.evaluator.core import EVALUATORS, evaluate_case
-from agentgate.result.service import aggregate_results
+from agentgate.result.service import aggregate_results, calculate_metrics
 from agentgate.storage.base import AgentGateRepository
 
 
@@ -36,10 +36,11 @@ class RunEngine:
         self.repository = repository
         self.scheduler = scheduler or LocalScheduler()
 
-    def run(self, dataset, target: Target, target_version: str, provider: str = "deterministic") -> Run:
+    def run(self, dataset, target: Target, target_version: str, provider: str = "deterministic",
+            evaluators=EVALUATORS) -> Run:
         snapshot = RunSnapshot(dataset=dataset,
                                target=TargetSnapshot(name="loan-agent", version=target_version, provider=provider),
-                               evaluators=EVALUATORS)
+                               evaluators=tuple(evaluators))
         run = Run(snapshot=snapshot, status=RunStatus.RUNNING, started_at=datetime.now(UTC))
         self.repository.save_run(run)
         results = []
@@ -62,4 +63,5 @@ class RunEngine:
         if run is None:
             return None
         results = self.repository.list_results(run_id)
-        return {"run": run, "results": results, "gate": aggregate_results(results)}
+        return {"run": run, "results": results, "gate": aggregate_results(results),
+                "metrics": calculate_metrics(results)}
