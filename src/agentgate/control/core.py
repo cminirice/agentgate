@@ -13,8 +13,9 @@ class EvaluationService:
         self.repository = repository
         self.engine = RunEngine(repository)
 
-    def launch(self, version: str, dataset_id: str = "loan-demo",
+    def launch(self, version: str, dataset_id: str | None = None,
                evaluator_ids: list[str] | None = None):
+        dataset_id = dataset_id or LOAN_DATASET.id
         if dataset_id != LOAN_DATASET.id:
             raise ValueError(f"unknown dataset: {dataset_id}")
         selected = EVALUATORS if evaluator_ids is None else tuple(
@@ -48,7 +49,7 @@ class EvaluationService:
     def datasets(self) -> list[dict]:
         return [{"id": LOAN_DATASET.id, "name": LOAN_DATASET.name,
                  "version": LOAN_DATASET.version, "case_count": len(LOAN_DATASET.cases),
-                 "description": "贷款审批、还款计划与投诉处理的确定性演示集"}]
+                 "description": "仅评估高风险申请是否正确进入人工复核"}]
 
     def evaluators(self) -> list[dict]:
         metric_for = {

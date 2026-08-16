@@ -13,8 +13,8 @@ def test_risky_fails_and_fixed_improves(tmp_path):
     assert risky_report["gate"].failed >= 4
     assert fixed_report["gate"].verdict == "pass"
     assert fixed_report["gate"].score > risky_report["gate"].score
-    assert len(repository.list_traces(risky.id)) == 4
-    assert len(repository.list_results(fixed.id)) == 20
+    assert len(repository.list_traces(risky.id)) == 1
+    assert len(repository.list_results(fixed.id)) == 5
     failures = [result for result in risky_report["results"] if result.verdict == "fail"]
     assert all(result.primary_failure_step for result in failures)
     assert repository.get_business_state("loan", "A-100") is not None

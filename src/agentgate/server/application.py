@@ -16,7 +16,7 @@ from agentgate.storage.sqlite import SQLiteRepository
 
 class LaunchRequest(BaseModel):
     version: str
-    dataset_id: str = "loan-demo"
+    dataset_id: str = "loan-risk-policy"
     evaluator_ids: list[str] | None = None
 
 
