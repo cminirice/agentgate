@@ -134,8 +134,8 @@ agentgate-goal/
 │   └── test_imports.py                      [MOD] Ensure removed contracts/core imports are absent
 │
 └── docs/
-    ├── evaluator-refactor-plan.md            [ADD] Architecture, behavior, and terminology plan
-    ├── evaluator-refactor-file-plan.md       [ADD] This file-level change map
+    ├── evaluator/refactor-plan.md            [ADD] Architecture, behavior, and terminology plan
+    ├── evaluator/file-plan.md       [ADD] This file-level change map
     ├── arch.md                               [MOD] New domain/evaluator/result architecture
     ├── capability-mapping.md                 [MOD] Rule / LLM Judge / Hybrid terminology
     └── progress.md                           [MOD] Checkpoints, verification, and remaining P2 work
