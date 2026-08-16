@@ -17,8 +17,9 @@ Case
   -> Target Agent
   -> Run + Trace
   -> Evaluators
-  -> Result
-  -> Report / Gate Decision
+  -> CheckResults + Results
+  -> Metric Summaries
+  -> Report + Gate Decision
 ```
 
 ## Five Core Modules
@@ -31,12 +32,12 @@ Includes:
 
 - input messages
 - initial state
-- expected outcome
+- typed Expectations and Conditions
 - required actions
 - forbidden actions
-- tool argument constraints
+- tool argument expectations
 - workflow constraints
-- final state assertions
+- final state expectations
 - policy references
 - provenance and review status
 
@@ -49,6 +50,9 @@ Includes:
 - run config
 - target agent config
 - evaluator config snapshot
+- metric aggregation plan snapshot
+- release gate configuration snapshot
+- canonical snapshot content hash
 - lifecycle status
 - timeout, retry, concurrency
 - run events
@@ -68,34 +72,63 @@ Includes:
 - retries
 - errors
 - state-changing actions
+- final business state
+- final target output
+
+OpenTelemetry and future provider formats enter through adapters under
+`trace/receivers/` or `trace/importers/`. Evaluators consume only the canonical
+vendor-neutral Trace in `domain/trace.py`.
 
 ### Evaluator
 
 Defines how behavior is judged.
 
-Initial evaluator types:
+Evaluator product categories are:
 
-- final answer match
+- Rule
+- LLM-as-a-Judge
+- Hybrid
+
+P1 implements deterministic Rule evaluators for:
+
+- skill routing
 - required tool called
 - forbidden tool not called
-- tool argument constraints
-- trajectory match
+- tool argument expectations
 - policy rule match
-- final state assertion
-- latency/cost budget
+- final state expectations
+
+Operators are reusable comparisons used inside Rule evaluators. They are not Metrics.
 
 ### Result
 
-Stores score, verdict, explanation, and evidence.
+Stores Outcome, nullable score, explanation, detailed checks, and evidence.
 
 Each result should link back to:
 
 - evaluator name and version
 - score
-- pass/fail/manual review verdict
+- pass/fail/review/not-applicable/error Outcome
 - reason
 - evidence span IDs
 - policy/document references
+
+An evaluator ERROR is different from an agent FAIL. ERROR fails the release gate closed
+but does not assign an agent failure stage. `primary_failure_step` is the first
+trace-sequenced stage where an agent failure was observed; it is not a proven root cause.
+
+## Code Layers
+
+```text
+domain/       Immutable Pydantic data models shared across boundaries
+evaluator/    Plan validation, observations, operators, Rules, scoring, runner
+result/       Multi-Result metric calculation, release Gate, report construction
+run/          Target execution and complete Run orchestration
+trace/        Telemetry receivers/importers and canonical normalization
+control/      Shared application service used by CLI and FastAPI
+```
+
+Dependencies point toward `domain/`; domain models never import runtime services.
 
 ## Product Modules
 
@@ -103,7 +136,7 @@ The core evaluation flow is intentionally small. Higher-level product capabiliti
 around it:
 
 ```text
-Case -> Run + Trace -> Evaluator -> Result
+Case -> Run + Trace -> Evaluator -> Result -> Metric / Gate
           ^                            |
           |                            v
         Queue                     Experiment

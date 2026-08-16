@@ -18,19 +18,19 @@ means its boundary is reserved; it does not mean the capability is implemented.
 | CAP-02 | Merged Skill datasets | `case/` | `lineage/` | scaffolded |
 | CAP-03 | Dedicated router-agent datasets | `case/` | `control/` | scaffolded |
 | CAP-04 | Agent and workflow evaluation | `run/targets/` | `trace/` | scaffolded |
-| CAP-05 | Unified execution engine | `run/` | `evaluator/`, `result/` | scaffolded |
+| CAP-05 | Unified execution engine | `run/` | `evaluator/`, `result/` | complete |
 | CAP-06 | Concurrency, timeout, sampling, retry | `run/` | `queue/` | scaffolded |
 | CAP-07 | Shared and private model credentials | `queue/` | `control/`, `run/` | scaffolded |
-| CAP-08 | Result and relationship visualization | `web/` | `result/`, `lineage/` | planned |
-| CAP-09 | Independent evaluator management | `evaluator/` | `control/` | scaffolded |
-| CAP-10 | Rule, LLM, and composite evaluators | `evaluator/` | `result/` | scaffolded |
-| CAP-11 | Quantitative score and explanation | `evaluator/` | `result/` | scaffolded |
+| CAP-08 | Result and relationship visualization | `web/` | `result/`, `lineage/` | partial |
+| CAP-09 | Independent evaluator management | `evaluator/` | `control/` | partial |
+| CAP-10 | Rule, LLM Judge, and Hybrid evaluators | `evaluator/` | `result/` | partial |
+| CAP-11 | Quantitative score and explanation | `evaluator/` | `result/` | complete |
 | CAP-12 | Evaluator version management | `lineage/` | `evaluator/` | scaffolded |
 | CAP-13 | Constrained-resource task queue | `queue/` | `run/scheduler.py` | scaffolded |
 | CAP-14 | A/B experiment creation | `experiment/` | `lineage/` | scaffolded |
 | CAP-15 | Controlled A/B execution | `experiment/` | `run/`, `queue/` | scaffolded |
 | CAP-16 | A/B comparison report | `experiment/` | `result/` | scaffolded |
-| CAP-17 | Release decision thresholds | `result/` | `experiment/` | scaffolded |
+| CAP-17 | Release decision thresholds | `result/` | `experiment/` | complete |
 | CAP-18 | Reproducible experiments | `experiment/` | `lineage/`, `run/snapshot.py` | scaffolded |
 | CAP-19 | Badcase clustering | `optimizer/` | `result/` | scaffolded |
 | CAP-20 | Root-cause analysis | `optimizer/` | `trace/` | scaffolded |

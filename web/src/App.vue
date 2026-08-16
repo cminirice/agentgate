@@ -17,7 +17,7 @@ const loading = ref(false)
 const traceOpen = ref(false)
 
 const caseNames = computed(() => Object.fromEntries((report.value?.run.snapshot.dataset.cases ?? []).map(c => [c.id, c.name])))
-const failed = computed(() => report.value?.results.filter(item => item.verdict === 'fail') ?? [])
+const failed = computed(() => report.value?.results.filter(item => item.outcome === 'fail') ?? [])
 const selectedAgent = computed(() => versions.value.find(item => item.id === selectedVersion.value))
 const selectedDatasetInfo = computed(() => datasets.value.find(item => item.id === selectedDataset.value))
 
@@ -50,7 +50,9 @@ async function launch() {
 
 async function openRun(id: string) { report.value = await api.report(id); trace.value = null }
 async function openTrace(caseId: string) { if (!report.value) return; trace.value = await api.trace(report.value.run.id, caseId); traceOpen.value = true }
-const asPercent = (score: number) => `${Math.round(score * 100)}%`
+const asPercent = (score: number|null) => score === null ? 'N/A' : `${Math.round(score * 100)}%`
+const outcomeText = { pass: '通过', fail: '失败', review: '待复核', not_applicable: '不适用', error: '评估错误' }
+const outcomeType = (outcome: string) => outcome === 'pass' ? 'success' : outcome === 'not_applicable' ? 'info' : outcome === 'review' ? 'warning' : 'danger'
 
 onMounted(() => refresh().catch(error => ElMessage.error(`无法连接后端：${error.message}`)))
 </script>
@@ -85,9 +87,14 @@ onMounted(() => refresh().catch(error => ElMessage.error(`无法连接后端：$
 
           <article class="config-card evaluator-card">
             <div class="card-index">E</div><label>Evaluators & Metrics</label>
+            <div class="evaluator-kinds" aria-label="评估器分类">
+              <span class="active-kind">规则评估器</span>
+              <span>LLM Judge · P2</span>
+              <span>Hybrid · P2</span>
+            </div>
             <el-checkbox-group v-model="selectedEvaluators" class="evaluator-list">
               <el-checkbox v-for="item in evaluators" :key="item.id" :value="item.id" border>
-                <span class="eval-name">{{ item.name }}</span><small>{{ item.metric }}</small>
+                <span class="eval-name">{{ item.name }}</span><small>{{ item.metric }} · {{ item.dimension }}</small>
               </el-checkbox>
             </el-checkbox-group>
           </article>
@@ -102,26 +109,35 @@ onMounted(() => refresh().catch(error => ElMessage.error(`无法连接后端：$
       <section id="result-report" class="region report-region" aria-labelledby="report-title">
         <div class="region-heading report-heading">
           <div><span class="step">02 · RESULT REPORT</span><h2 id="report-title">结果报告</h2><p v-if="report">{{ report.run.snapshot.target.version }} · {{ report.run.snapshot.dataset.name }}</p><p v-else>运行评估后在此查看指标、失败证据和轨迹。</p></div>
-          <el-tag v-if="report" :type="report.gate.verdict === 'pass' ? 'success' : 'danger'" effect="dark" size="large">{{ report.gate.verdict === 'pass' ? '发布门槛通过' : '发布门槛未通过' }}</el-tag>
+          <el-tag v-if="report" :type="report.gate.outcome === 'pass' ? 'success' : 'danger'" effect="dark" size="large">{{ report.gate.outcome === 'pass' ? '发布门槛通过' : '发布门槛未通过' }}</el-tag>
         </div>
 
         <template v-if="report">
           <div class="metric-grid" aria-label="评估指标">
-            <article v-for="metric in report.metrics" :key="metric.key" class="metric-card" :data-testid="`metric-${metric.key}`">
-              <span>{{ metric.label }}</span><strong>{{ asPercent(metric.score) }}</strong>
-              <el-progress :percentage="Math.round(metric.score * 100)" :show-text="false" :stroke-width="7" :color="metric.score >= .95 ? '#20b486' : '#e85d75'" />
-              <small>{{ metric.passed }} / {{ metric.total }} 项通过</small>
+            <article v-for="metric in report.metrics" :key="`${metric.level}-${metric.key}`" class="metric-card" :data-testid="`metric-${metric.level}-${metric.key}`">
+              <span>{{ metric.label }} · {{ metric.level }}</span><strong>{{ asPercent(metric.score) }}</strong>
+              <el-progress :percentage="Math.round((metric.score ?? 0) * 100)" :show-text="false" :stroke-width="7" :color="(metric.score ?? 0) >= .95 ? '#20b486' : '#e85d75'" />
+              <small>{{ metric.passed }} 通过 · {{ metric.failed }} 失败 · {{ metric.not_applicable }} 不适用<span v-if="metric.errors"> · {{ metric.errors }} 错误</span></small>
             </article>
             <article class="metric-card gate-card"><span>发布门槛</span><strong>{{ Math.round(report.gate.threshold * 100) }}%</strong><small>{{ report.gate.reason }}</small></article>
           </div>
 
           <div class="report-grid">
             <article class="report-panel">
-              <div class="panel-title"><h3>失败用例与证据</h3><el-tag type="danger" plain>{{ failed.length }} 项</el-tag></div>
-              <el-empty v-if="failed.length === 0" description="没有失败项" :image-size="72" />
-              <button v-for="item in failed" :key="`${item.case_id}-${item.evaluator_id}`" class="failure" @click="openTrace(item.case_id)">
-                <span><b>{{ caseNames[item.case_id] }}</b><small>{{ item.evaluator_name }} · {{ item.reason }}</small></span><em>查看轨迹 →</em>
-              </button>
+              <div class="panel-title"><h3>全部检查结果</h3><el-tag type="danger" plain>{{ failed.length }} 项失败</el-tag></div>
+              <div v-for="item in report.results" :key="`${item.case_id}-${item.evaluator_id}`" class="result-item">
+                <div class="result-head">
+                  <span><b>{{ caseNames[item.case_id] }} · {{ item.evaluator_name }}</b><small>{{ item.reason }}</small></span>
+                  <el-tag :type="outcomeType(item.outcome)" size="small">{{ outcomeText[item.outcome] }}</el-tag>
+                </div>
+                <ul v-if="item.checks.length" class="check-list">
+                  <li v-for="check in item.checks" :key="check.id">
+                    <span>{{ check.name }} · {{ check.reason }}</span>
+                    <el-tag :type="outcomeType(check.outcome)" size="small" effect="plain">{{ outcomeText[check.outcome] }}</el-tag>
+                  </li>
+                </ul>
+                <button v-if="item.outcome === 'fail'" class="trace-link" @click="openTrace(item.case_id)">查看失败轨迹 →</button>
+              </div>
             </article>
 
             <article class="report-panel">

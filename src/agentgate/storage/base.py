@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from agentgate.contracts import Result, Run, Trace
+from agentgate.domain import Result, Run, Trace
 
 
 class AgentGateRepository(Protocol):

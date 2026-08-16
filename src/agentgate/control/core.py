@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from agentgate.demo.loan import LOAN_DATASET, LoanAgent
-from agentgate.evaluator.core import EVALUATORS
+from agentgate.evaluator import EVALUATORS
 from agentgate.run.core import RunEngine
 from agentgate.storage.base import AgentGateRepository
 
@@ -52,11 +52,15 @@ class EvaluationService:
                  "description": "仅评估高风险申请是否正确进入人工复核"}]
 
     def evaluators(self) -> list[dict]:
-        metric_for = {
-            "required-tool": "工具准确率", "forbidden-tool": "工具准确率",
-            "tool-arguments": "工具准确率", "final-state": "状态准确率",
-            "policy-compliance": "策略合规率",
+        return [{
+            "id": item.id,
+            "name": item.name,
+            "kind": item.kind,
+            "version": item.version,
+            "dimension": item.dimension,
+            "metric": item.metric,
+            "severity": item.severity,
+            "evaluator_type": item.evaluator_type,
+            "operator": getattr(item, "operator", None),
         }
-        return [{"id": item.id, "name": item.name, "kind": item.kind,
-                 "version": item.version, "metric": metric_for[item.id]}
                 for item in EVALUATORS]

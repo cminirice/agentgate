@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from agentgate.contracts import Result, Run, Trace
+from agentgate.domain import Result, Run, Trace, canonical_json
 
 
 class SQLiteRepository:
@@ -44,7 +44,7 @@ class SQLiteRepository:
 
     @staticmethod
     def _json(model: Run | Trace | Result) -> str:
-        return model.model_dump_json()
+        return canonical_json(model)
 
     def save_run(self, run: Run) -> None:
         with self._connect() as db:

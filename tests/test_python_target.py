@@ -1,4 +1,4 @@
-from agentgate.contracts import Case, Trace
+from agentgate.domain import Case, Trace
 from agentgate.run.core import LocalScheduler, PythonFunctionTarget
 
 

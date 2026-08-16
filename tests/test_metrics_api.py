@@ -11,8 +11,11 @@ def test_config_catalogs_and_real_report_metrics(tmp_path):
             "id": "loan-risk-policy", "name": "高风险贷款策略评估", "version": "1", "case_count": 1,
             "description": "仅评估高风险申请是否正确进入人工复核",
         }]
-        assert len(evaluators) == 5
-        assert {item["metric"] for item in evaluators} == {"工具准确率", "状态准确率", "策略合规率"}
+        assert len(evaluators) == 6
+        assert {item["kind"] for item in evaluators} == {"rule"}
+        assert {item["dimension"] for item in evaluators} == {
+            "routing", "tool_use", "state", "safety",
+        }
 
         response = client.post("/api/evaluations", json={
             "version": "loan-agent-v1-risky", "dataset_id": "loan-risk-policy",
@@ -21,12 +24,10 @@ def test_config_catalogs_and_real_report_metrics(tmp_path):
         assert response.status_code == 201
         report = client.get(f"/api/runs/{response.json()['id']}").json()
         assert len(report["results"]) == 3
-        metrics = {item["key"]: item for item in report["metrics"]}
-        assert metrics["tool_accuracy"] == {
-            "key": "tool_accuracy", "label": "工具准确率", "score": 0.0,
-            "passed": 0, "total": 3,
-        }
-        assert metrics["overall_score"]["score"] == 0.0
+        metrics = {(item["level"], item["key"]): item for item in report["metrics"]}
+        assert metrics[("dimension", "tool_use")]["label"] == "工具准确率"
+        assert metrics[("dimension", "tool_use")]["score"] == 0.25
+        assert metrics[("overall", "overall")]["score"] == 0.25
 
 
 def test_launch_rejects_empty_evaluator_selection(tmp_path):
