@@ -22,6 +22,7 @@ working notes, and implementation plans live under the module that owns them.
 | Run | [run/](run/) | Run snapshots and target execution |
 | Trace | [trace/](trace/) | Canonical traces and telemetry ingestion |
 | Result | [result/](result/) | Scores, metrics, reports, and release gates |
+| Control plane | [control-plane/design.md](control-plane/design.md) | Job ownership, queue and scheduler boundaries, and external execution integration |
 | Control panel | [control-panel/](control-panel/) | Web UI and application workflows |
 
 ## Documentation rule
