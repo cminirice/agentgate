@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, ApiError, type EvaluatorOption, type Run, type Version } from '../api/client'
+import { ApiError } from '../api/client'
 import { datasetApi } from '../api/datasets'
 import DatasetList from '../components/dataset/DatasetList.vue'
 import VersionSelector from '../components/dataset/VersionSelector.vue'
@@ -11,18 +11,12 @@ import type {
   DatasetExport, DatasetSummary, DatasetVersion, EvaluationCase, ValidationIssue,
 } from '../types/dataset'
 
-const emit = defineEmits<{ runCreated: [run: Run] }>()
-
 const datasets = shallowRef<DatasetSummary[]>([])
 const versions = shallowRef<DatasetVersion[]>([])
 const activeDatasetId = ref('')
 const activeVersionId = ref('')
 const activeCaseId = ref('')
 const editedCase = ref<EvaluationCase|null>(null)
-const targetVersions = ref<Version[]>([])
-const evaluators = ref<EvaluatorOption[]>([])
-const selectedAgent = ref('loan-agent-v2-fixed')
-const selectedEvaluators = ref<string[]>([])
 const busy = ref(false)
 const loading = ref(false)
 const validationIssues = ref<ValidationIssue[]>([])
@@ -287,36 +281,12 @@ async function importDataset(event: Event) {
   }
 }
 
-async function launchEvaluation() {
-  if (!activeVersion.value?.version) return ElMessage.warning('只能运行已发布版本')
-  if (!selectedEvaluators.value.length) return ElMessage.warning('请至少选择一个评估器')
-  busy.value = true
-  try {
-    const run = await api.launch(
-      selectedAgent.value,
-      activeDatasetId.value,
-      activeVersion.value.version,
-      selectedEvaluators.value,
-    )
-    emit('runCreated', run)
-    ElMessage.success('评估已完成，正在打开结果报告')
-  } catch (error) {
-    showError(error, '运行评估失败')
-  } finally {
-    busy.value = false
-  }
-}
-
 function showError(error: unknown, fallback: string) {
   ElMessage.error(error instanceof Error ? error.message : fallback)
 }
 
 onMounted(async () => {
   try {
-    const [agents, evaluatorItems] = await Promise.all([api.versions(), api.evaluators()])
-    targetVersions.value = agents
-    evaluators.value = evaluatorItems
-    selectedEvaluators.value = evaluatorItems.map(item => item.id)
     await loadDatasets()
   } catch (error) {
     showError(error, '无法加载测评集')
@@ -330,7 +300,7 @@ onMounted(async () => {
       <div>
         <span class="step">DATASET WORKSPACE</span>
         <h1 id="dataset-workspace-title">测评集与用例管理</h1>
-        <p>编辑草稿、发布不可变版本，并用选定版本运行真实评估。</p>
+        <p>编辑草稿、验证内容并发布不可变版本；评估统一从“评估运行”页启动。</p>
       </div>
       <div v-if="activeDataset" class="workspace-status">
         <b>{{ activeDataset.name }}</b>
@@ -389,21 +359,6 @@ onMounted(async () => {
         :validation-issues="activeCaseIssues"
         @save="saveCase"
       />
-    </div>
-
-    <div v-if="activeDatasetId" class="dataset-run-bar">
-      <div>
-        <b>用此版本运行评估</b>
-        <span v-if="activeVersion?.status === 'published'">v{{ activeVersion.version }} · {{ activeVersion.cases.length }} 个用例 · 内容 {{ activeVersion.content_sha256.slice(0, 10) }}</span>
-        <span v-else>草稿不能运行，请先验证并发布。</span>
-      </div>
-      <el-select v-model="selectedAgent" data-testid="dataset-agent-select" aria-label="运行 Agent 版本">
-        <el-option v-for="item in targetVersions" :key="item.id" :label="item.label" :value="item.id" />
-      </el-select>
-      <el-select v-model="selectedEvaluators" multiple collapse-tags aria-label="运行评估器">
-        <el-option v-for="item in evaluators" :key="item.id" :label="item.name" :value="item.id" />
-      </el-select>
-      <el-button type="primary" :disabled="activeVersion?.status !== 'published'" :loading="busy" data-testid="run-dataset-version" @click="launchEvaluation">运行此版本 →</el-button>
     </div>
 
     <input ref="importInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="importDataset" />

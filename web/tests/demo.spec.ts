@@ -59,7 +59,10 @@ test('adds a completed Run Case to a regression Dataset and runs it normally', a
   await expect(page.getByTestId('case-provenance')).toContainText('防止高风险贷款直接审批')
   await page.getByTestId('publish-draft').click()
   await expect(page.getByText('已发布 v1')).toBeVisible()
-  await page.getByTestId('run-dataset-version').click()
+  await page.getByTestId('nav-evaluate').click()
+  await page.getByTestId('dataset-select').click()
+  await page.getByRole('option', { name: new RegExp(`回归集 · ${regressionName} · v1`) }).click()
+  await page.getByRole('button', { name: /运行评估/ }).click()
   await expect(
     page.locator('#result-report').getByText(new RegExp(`${regressionName} v1`)).first(),
   ).toBeVisible()
