@@ -137,6 +137,12 @@ function navigate(next: 'evaluate'|'datasets') {
   }
 }
 function onPopState() { page.value = location.pathname.startsWith('/datasets') ? 'datasets' : 'evaluate' }
+async function showCreatedRun(run: Run) {
+  await openRun(run.id)
+  await refresh()
+  navigate('evaluate')
+  requestAnimationFrame(() => document.querySelector('#result-report')?.scrollIntoView({ behavior: 'smooth' }))
+}
 const asPercent = (score: number|null) => score === null ? 'N/A' : `${Math.round(score * 100)}%`
 const outcomeText: Record<string, string> = { pass: '通过', fail: '失败', review: '待复核', not_applicable: '不适用', error: '评估错误' }
 const outcomeType = (outcome: string) => outcome === 'pass' ? 'success' : outcome === 'not_applicable' ? 'info' : outcome === 'review' ? 'warning' : 'danger'
@@ -268,7 +274,7 @@ onUnmounted(() => window.removeEventListener('popstate', onPopState))
         </article>
       </section>
     </main>
-    <main v-else class="dataset-main"><DatasetWorkspace /></main>
+    <main v-else class="dataset-main"><DatasetWorkspace @run-created="showCreatedRun" /></main>
 
     <el-dialog v-model="rerunOpen" title="重新运行单个Case" width="500px">
       <template v-if="report">

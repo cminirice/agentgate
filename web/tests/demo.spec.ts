@@ -46,6 +46,7 @@ test('adds a completed Run Case to a regression Dataset and runs it normally', a
   const addButton = page.getByRole('button', { name: '加入回归集' })
   await expect(addButton).toHaveCount(1)
   await addButton.click()
+  await page.getByTestId('regression-mode').getByText('新建回归集').click()
   await page.getByTestId('regression-name').fill(regressionName)
   await page.getByTestId('regression-reason').fill('防止高风险贷款直接审批')
   await page.getByTestId('submit-regression').click()

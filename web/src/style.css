@@ -110,10 +110,15 @@ main { max-width: 1200px; margin: -24px auto 0; padding: 0 24px 56px; }
 .expectation-row-head { display: grid; grid-template-columns: 145px 1fr auto; gap: 8px; }
 .expectation-fields { margin-top: 9px; display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 8px; }
 .editor-save-footer { display: flex; justify-content: flex-end; padding-top: 18px; }
+.dataset-run-bar { min-height: 82px; padding: 13px 18px; display: grid; grid-template-columns: minmax(230px, 1fr) 180px 230px auto; gap: 10px; align-items: center; border-top: 1px solid #dfe8e6; background: #102d35; color: white; }
+.dataset-run-bar b, .dataset-run-bar span { display: block; }
+.dataset-run-bar span { color: #b7cdcf; margin-top: 4px; font-size: 11px; }
 .hidden-file-input { display: none; }
 
 @media (max-width: 1100px) {
   .dataset-layout { grid-template-columns: 220px 280px minmax(440px, 1fr); overflow-x: auto; }
+  .dataset-run-bar { grid-template-columns: 1fr 180px 230px; }
+  .dataset-run-bar > div { grid-column: 1 / -1; }
 }
 @media (max-width: 900px) {
   .config-grid { grid-template-columns: 1fr 1fr; } .evaluator-card { grid-column: 1 / -1; } .metric-grid { grid-template-columns: repeat(3, 1fr); }
@@ -131,4 +136,7 @@ main { max-width: 1200px; margin: -24px auto 0; padding: 0 24px 56px; }
   .version-toolbar { align-items: stretch; flex-direction: column; }
   .version-actions .el-button { flex: 1; }
   .case-meta-grid, .expectation-row-head, .expectation-fields { grid-template-columns: 1fr; }
+  .dataset-run-bar { grid-template-columns: 1fr; }
+  .dataset-run-bar > div { grid-column: auto; }
+  .dataset-run-bar .el-select, .dataset-run-bar .el-button { width: 100%; }
 }
