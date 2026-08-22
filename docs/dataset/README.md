@@ -3,7 +3,11 @@
 This module owns reusable evaluation data: Dataset identity, immutable Dataset versions,
 Cases, expected outcomes, validation, and import/export.
 
-Current detailed plan: [implementation-plan.md](implementation-plan.md).
+Detailed plans:
+
+- [Dataset and Case management](implementation-plan.md)
+- [Regression-set workflow](regression-set-plan.md)
+- [Regression-set design record](regression-set-design.md)
 
 Code ownership:
 
