@@ -1,5 +1,10 @@
 # AgentGate Architecture
 
+> [!NOTE]
+> Historical `goal/p1-demo` record. Package paths here are not authoritative for
+> `refactor-1`; see [the architecture review ledger](../../architecture-review-ledger.md).
+
+
 ## Positioning
 
 AgentGate is an OpenTelemetry-native, framework-independent evaluation harness for enterprise agent quality gates.

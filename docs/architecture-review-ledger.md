@@ -47,7 +47,7 @@ After all folders and Python files are reviewed, produce one consolidated final 
 
 ## Navigation map
 
-Current `refactor-1` target backend folders: 12.
+Current `refactor-1` target backend folders: 13.
 
 1. `domain/`
 2. `case/`
@@ -55,14 +55,15 @@ Current `refactor-1` target backend folders: 12.
 4. `trace/`
 5. `evaluator/`
 6. `result/`
-7. `optimizer/`
-8. `integrations/`
-9. `application/`
-10. `storage/`
-11. `cli/`
-12. `server/`
+7. `analysis/`
+8. `optimizer/`
+9. `integrations/`
+10. `application/`
+11. `storage/`
+12. `cli/`
+13. `server/`
 
-`web/` is a separate frontend directory and is not included in the 12 backend folders.
+`web/` is a separate frontend directory and is not included in the 13 backend folders.
 
 Current Level 2 progress:
 
@@ -71,12 +72,14 @@ Current Level 2 progress:
 - `trace/`: completed.
 - `evaluator/`: completed.
 - `result/`: completed.
+- `analysis/`: retained as a top-level static Agent/Skill definition-analysis capability;
+  detailed Level 2 review is pending.
 - `optimizer/`: detailed design deferred until its implementation stage.
 - `experiment/`: removed/deferred; a specific `ab_test/` module may be introduced later.
 - `lineage/`: no top-level package in `refactor-1`; basic lineage uses indexed Run asset
   references and database queries.
 - `queue/`: no top-level package in `refactor-1`; demo async execution uses a Celery
-  scheduler adapter.
+  job dispatcher.
 - `integrations/`: completed.
 - `application/`: in progress; `run_management.py`,
   `dataset_management.py`, `target_catalog.py`,
@@ -89,6 +92,8 @@ Current Level 2 progress:
 - AgentGate remains one project. Do not create a separate repository for the evaluation harness.
 - AgentGate is a complete Agent Evaluation Harness, not only an Eval Engine.
 - AgentGate owns test execution, evaluation, regression, and analysis.
+- `analysis/` examines Agent/Skill definitions without executing them; `optimizer/`
+  analyzes completed Runs, Results, and Traces. Do not merge these responsibilities.
 - AgentGate does not build a full enterprise Control Plane or full observability platform.
 - POC Control Plane and observability functions remain lightweight; production integrations should primarily use existing external systems.
 - `domain/` is the single source of truth for domain models and domain invariants. Do not redefine `TestCase`, `Dataset`, `Run`, `Trace`, or similar objects in feature folders.
@@ -204,8 +209,8 @@ Removed:
 
 - `runner.py`: duplicates Engine execution responsibility.
 - `scheduler.py`: scheduling does not belong in `run/`; local, Celery, and customer
-  scheduler implementations belong under `integrations/schedulers/` and invoke the same
-  application/Run execution boundary.
+  background job dispatch implementations belong under
+  `integrations/job_dispatchers/` and invoke the same application/Run execution boundary.
 - `concurrency.py`: concurrency is not an independent business module.
 - `process_pool.py`: renamed to `process_manager.py`.
 - `lifecycle.py`: legal Run status transitions belong in `domain/`.
@@ -305,7 +310,7 @@ Confirmed responsibilities:
 
 - Contains LLM-based semantic/subjective evaluation.
 - Used for correctness, completeness, business-semantic compliance, reasoning quality, user-intent completion, and other judgments that cannot be fully expressed as fixed rules.
-- Model access is provided through `integrations/models/`.
+- Model access is provided through `integrations/model_providers/`.
 
 Removed:
 
@@ -367,7 +372,7 @@ Removed/moved:
 - `service.py`: renamed to `report.py`; broader application orchestration belongs in
   `application/`.
 - `export/`: removed from the Result core. JSON/JUnit/Markdown/callback output adapters
-  belong under `integrations/sinks/`. FastAPI JSON output is sufficient for the POC.
+  belong under `integrations/result_outputs/`. FastAPI JSON output is sufficient for the POC.
 
 ## `optimizer/` Level 2 status
 
@@ -445,14 +450,14 @@ empty contracts and no working queue implementation.
 Execution modes use replaceable adapters:
 
 ```text
-Standalone synchronous POC -> local scheduler adapter
-Asynchronous demo          -> Celery scheduler adapter + Redis
-Customer environment       -> external scheduler adapter
-                             -> shared RunEngine
+Standalone synchronous POC -> direct application execution
+Asynchronous demo          -> Celery job dispatcher + Redis
+Customer environment       -> external scheduler calls AgentGate internal execution API
+                             -> shared application execution boundary
 ```
 
-Celery integration belongs under `integrations/schedulers/celery.py`, not in the Run
-engine or a Queue domain package.
+Celery integration belongs under `integrations/job_dispatchers/celery.py`, not in the
+Run engine or a Queue domain package.
 
 Rules:
 

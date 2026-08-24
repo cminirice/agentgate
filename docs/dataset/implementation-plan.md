@@ -1,5 +1,11 @@
 # Dataset and Case Management Plan
 
+> [!IMPORTANT]
+> Pre-refactor design record. Behavior and acceptance criteria remain useful, but file
+> paths and module ownership are superseded by
+> [the architecture review ledger](../architecture-review-ledger.md).
+
+
 ## Goal
 
 Build a real SQLite-backed Dataset and Case workflow that can be tested from the Chinese
