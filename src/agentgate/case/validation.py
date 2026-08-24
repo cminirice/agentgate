@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agentgate.domain import (
-    DatasetVersion, DomainModel, MatchesJsonSchema, ToolArgumentExpectation,
+    DatasetVersion, DomainModel, ToolArgumentExpectation,
 )
 
 
@@ -72,11 +72,6 @@ def validate_dataset_version(version: DatasetVersion) -> None:
                 elif expectation.kind == "state" and not str(expectation.path).strip():
                     issues.append(ValidationIssue(
                         path=exp_base, message="最终状态期望需要字段路径"
-                    ))
-                if isinstance(expectation.condition, MatchesJsonSchema):
-                    issues.append(ValidationIssue(
-                        path=f"{exp_base}.condition",
-                        message="JSON Schema 检查尚未实现，不能发布该用例",
                     ))
 
     if issues:
