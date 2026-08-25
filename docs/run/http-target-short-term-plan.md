@@ -11,7 +11,7 @@
 > merge, deduplication, ordering, and completeness semantics; this plan implements only
 > the minimal correlation subset required for the HTTP + OTel path.
 >
-> Target branch: `goal/p1-demo` (short-term). Path migration to `refactor-1` is tracked
+> Target branch: `integration/p1` (short-term). Path migration to `refactor-1` is tracked
 > in §11.
 
 ## 1. Goal and User Decisions
@@ -702,7 +702,119 @@ deferred.
   launch selector change (§C) must pass typecheck/build/E2E; existing loan demo E2E stays
   green (non-regression).
 
+## 10.5. Single-Case Rerun Compatibility
+
+### Background
+
+This plan was authored against the `goal/p1-demo` baseline and does not cover the
+single-Case rerun capability delivered later by PR #2 (merged into `integration/p1`).
+A design check found that two contracts in this plan would **break** rerun if applied
+verbatim:
+
+- §5 moves `version` out of `TargetSnapshot` (into `ref.external_version_id`), but
+  `control_plane/service.py` `rerun_case` rewrites `source.snapshot.target.version` to
+  pin a rerun to a different target version.
+- §6 gives a trimmed `RunEngine.run` signature that drops the rerun-specific parameters
+  (`metric_plan` / `gate_spec` / `selected_case_ids` / `parent_run_id` / `root_run_id` /
+  `rerun_case_id`) the current signature (see `src/agentgate/run/core.py` lines 44-52) and
+  `rerun_case` rely on.
+
+This section merges the rerun contracts into the new target/adapter contracts. The
+adaptation is docs-first (this plan is the design source) and is implemented together
+with §5-§7; it is not a separate increment.
+
+### Adaptation points
+
+1. **`RunEngine.run` new signature must retain the rerun parameters.** The trimmed
+   signature in §6 is insufficient. The merged signature replaces `target` +
+   `target_version` + `provider` with `dataset_version` + `target_snapshot` + `adapter`
+   (per §6) **and** retains every rerun parameter from the current signature:
+
+   ```text
+   run(dataset_version, target_snapshot, adapter, evaluators,
+       *, metric_plan=None, gate_spec=None, selected_case_ids=None,
+       parent_run_id=None, root_run_id=None, rerun_case_id=None,
+       trace_wait_seconds=30.0, trace_poll_interval_seconds=0.5)
+   ```
+
+   `target_snapshot` / `metric_plan` / `gate_spec` / `selected_case_ids` /
+   `parent_run_id` / `root_run_id` / `rerun_case_id` are all kept; `target` +
+   `target_version` + `provider` are removed (subsumed by `target_snapshot` + `adapter`).
+   The hard-coded `name="loan-agent"` fallback (current `run/core.py` lines 68-69) is
+   removed as §6 requires; rerun always supplies an explicit `target_snapshot`.
+
+2. **`rerun_case` version rewrite must target `ref.external_version_id`.** The current
+   `rerun_case` (see `src/agentgate/control_plane/service.py` line 78) does
+   `source.snapshot.target.model_copy(update={"version": version})`. Under the new
+   `TargetSnapshot` (§5) there is no `version` field; the version lives in
+   `ref.external_version_id`. The rewrite becomes:
+
+   ```text
+   target_snapshot = source.snapshot.target.model_copy(
+       update={"ref": source.snapshot.target.ref.model_copy(
+           update={"external_version_id": version}
+       )}
+   )
+   ```
+
+   The `if version not in LoanAgent.versions` check (current lines 76-77) is replaced by a
+   lookup through the **local target registry** (§A): validate the `target_id` /
+   `external_version_id` pair against registered targets and reject with
+   `target_not_found` (or `version_not_found` when the catalog lands) **before
+   execution**. The hard-coded `LoanAgent.versions` membership test is removed.
+
+3. **`rerun_comparison` version reads must use `ref.external_version_id`.** The current
+   `rerun_comparison` (see `service.py` lines 142-143) reads
+   `parent.snapshot.target.version` and `rerun.snapshot.target.version`. Under the new
+   structure these become `parent.snapshot.target.ref.external_version_id` and
+   `rerun.snapshot.target.ref.external_version_id`. No other change to the comparison
+   contract.
+
+4. **`rerun_case` adapter source must follow `adapter_type`.** The current `rerun_case`
+   hard-codes `LoanAgent(self.repository)` (line 81). Under the new architecture the rerun
+   rebuilds the adapter from the **source snapshot's `adapter_type`**: if
+   `adapter_type == "python_fn"` rebuild `PythonFunctionTarget(LoanAgent(self.repository))`;
+   if `"http"` rebuild `HttpTargetAdapter` from the registry entry (`endpoint` +
+   `credential_ref`, resolved by `EnvCredentialResolver`). The rerun may delegate to the
+   registry's `build()` factory (§A) or dispatch by `adapter_type` within the service.
+   **Routing stays in the service** (invariant #12); no adapter selection logic in
+   CLI/API/Web.
+
+5. **`latest_target_version()` must go through the registry.** The current static method
+   (see `service.py` lines 93-95) returns `LoanAgent.versions[-1]`. Under the new
+   architecture it queries the local target registry (§A) — return the latest
+   `external_version_id` of a designated default target, or accept a `target_id` argument
+   and look up that target's latest version. The concrete return shape is left to the
+   implementer, but the contract direction is: **no hard-coded `LoanAgent.versions`
+   reference**; the registry is the single source of target/version truth.
+
+6. **Rerun reuses the §4 inline/await trace paths — no new mechanism.** The current rerun
+   targets only the loan demo, which goes through `PythonFunctionTarget` and therefore the
+   **inline_trace path** (§6 `python_fn` adapter: `inline_trace=<returned Trace>`,
+   RunEngine consumes it directly, no OTLP await). A future `rerun_http` (not in this
+   increment) would follow the §4 await path (pending mapping + `trace_wait_seconds`).
+   The rerun path **does not** introduce a third correlation mechanism; it branches on
+   the same `inline_trace is not None` check (§4 step 7) as the primary run.
+
+### Acceptance
+
+22. Single-Case rerun (loan demo) works under the new `TargetSnapshot` + adapter
+    architecture: `rerun_case` rewrites `ref.external_version_id`;
+    `rerun_comparison` reads `ref.external_version_id`; the rerun's Gate outcome matches
+    the pre-PR-#2 behavior (non-regression). The rerun `Run` carries `parent_run_id` /
+    `root_run_id` / `rerun_case_id` exactly as today.
+
+### Invariants
+
+These adaptations introduce **no new** Architecture Rule violation: rerun remains Run
+orchestration (#2); a rerun target/trace error is an execution error, not an Agent FAIL
+(#9); `credential_ref` stays an opaque id, never a secret (#15); adapter routing lives
+in the service, not in UI/API (#12).
+
 ## 11. Path Migration Note (refactor-1)
+
+> Confirmed: short-term uses `run/targets/` paths on `integration/p1`; migration to
+> `integrations/targets/` deferred until `refactor-1` is created.
 
 This plan uses the **`goal/p1-demo`** paths: `run/targets/` for adapters and `run/core.py`
 for the RunEngine + `Target` boundary. It does **not** adopt the
@@ -881,6 +993,12 @@ Trace.
   `llm.*`/`tool.*` attributes — the scheme the normalizer rules in §8 target.
 - Uses the OTel SDK to propagate the incoming `traceparent` (the Agent's spans inherit the
   AgentGate-generated trace_id) and to export OTLP/HTTP JSON to AgentGate.
+
+> Dependencies (`openinference-instrumentation-langchain`, `opentelemetry-sdk`,
+> `langchain`) are declared under `[project.optional-dependencies] demo` in `pyproject.toml`;
+> the sample runs a deterministic stub when no LLM provider key is set so CI needs no
+> provider key (§B Security). Tests use the in-process `fake_http_agent.py` fixture, not
+> the live service.
 
 ### Security
 
