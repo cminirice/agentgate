@@ -2,9 +2,9 @@
 
 ## Status
 
-Implemented and verified on `feature/regression-set`. This record captures stable design
-decisions; delivery scope, file ownership, checkpoints, and acceptance tests are owned by
-[the implementation plan](regression-set-plan.md).
+Implemented and verified in the Regression Set integration workstream. This record
+captures stable design decisions; delivery scope, file ownership, checkpoints, and
+acceptance tests are owned by [the implementation plan](regression-set-plan.md).
 
 ## Context
 

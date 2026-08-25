@@ -16,11 +16,11 @@ Completed Run
 ```
 
 This increment is complete when the workflow succeeds through the API and Chinese Web UI
-on desktop and mobile, while existing Dataset and evaluation workflows remain green.
+on desktop, while existing Dataset and evaluation workflows remain green.
 
 ## 2. Current State and Gap
 
-Implemented and verified on `feature/regression-set`:
+Implemented and verified in the Regression Set integration workstream:
 
 - `DatasetPurpose` distinguishes standard and regression Datasets while preserving old
   payload compatibility;
@@ -32,7 +32,7 @@ Implemented and verified on `feature/regression-set`:
   and Trace;
 - the evaluation page refreshes its Dataset catalog when opened, so a newly published
   regression Dataset can be selected and run;
-- unit, API, type, build, desktop, and mobile acceptance tests pass.
+- unit, API, type, build, and desktop acceptance tests pass.
 
 Remaining gaps belong to the broader Result Center capability: Case correction from a
 Result, result filtering, confusion-matrix source data, and whole-Run comparison. There is
@@ -120,6 +120,7 @@ Rules:
 - The copied Case receives a new internal ID.
 - Provenance is immutable and included in new DatasetVersion hashes.
 - Missing purpose/provenance fields retain compatibility with old payloads.
+- Legacy RunSnapshot hashes remain valid when a snapshot predates Case provenance.
 - Membership is unique by `(regression_dataset_id, source_case_id)`.
 - SQLite continues to store JSON payloads; no table migration is required.
 
@@ -204,12 +205,12 @@ The UI does not decide membership, duplicate, version, or execution rules.
 ```text
 [MOD]  src/agentgate/domain/case.py
 [MOD]  src/agentgate/domain/__init__.py
+[MOD]  src/agentgate/domain/run.py
 [MOD]  src/agentgate/case/service.py
 [MOD]  src/agentgate/control_plane/service.py
 [MOD]  src/agentgate/server/application.py
 [MOD]  src/agentgate/storage/base.py
 [MOD]  src/agentgate/storage/sqlite.py
-[MOD]  src/agentgate/case/import_export.py
 [MOD]  web/src/types/dataset.ts
 [MOD]  web/src/api/client.ts
 [MOD]  web/src/api/datasets.ts
@@ -217,21 +218,22 @@ The UI does not decide membership, duplicate, version, or execution rules.
 [MOD]  web/src/pages/DatasetWorkspace.vue
 [MOD]  web/src/components/dataset/DatasetList.vue
 [MOD]  web/src/components/dataset/CaseEditor.vue
-[MOD]  web/src/style.css
 [ADD]  tests/test_regression_set.py
 [ADD]  tests/test_regression_set_api.py
-[MOD]  tests/test_dataset_import_export.py
+[MOD]  tests/test_snapshot_immutability.py
+[MOD]  web/playwright.config.ts
 [MOD]  web/tests/demo.spec.ts
-[MOD]  web/tests/dataset.spec.ts
 [ADD]  docs/dataset/regression-set-design.md
 [ADD]  docs/dataset/regression-set-plan.md
+[MOD]  docs/dataset/README.md
 [KEEP] RunEngine, evaluator execution, Result aggregation, MetricPlan, and GateSpec
 [KEEP] SQLite table layout; no SQL migration
 ```
 
 ## 12. Parallel Development Boundary
 
-- Branch/workstream: `feature/regression-set`.
+- Source workstream: `feature/regression-set`; integration submission:
+  `feature/regression-set-integration`.
 - Base dependency: `feature/single-case-rerun` and the current Dataset contracts.
 - This workstream owns the files listed above only for regression-specific changes.
 - Evaluator algorithms and expectation semantics remain owned by the Evaluator
@@ -249,7 +251,7 @@ The UI does not decide membership, duplicate, version, or execution rules.
 3. API: request validation, error mapping, and JSON compatibility.
 4. Web workflow: add dialog, Dataset badges, provenance, publication, and evaluation-page
    refresh.
-5. Verification: full Python suite, frontend typecheck/build, and desktop/mobile E2E.
+5. Verification: full Python suite, frontend typecheck/build, and desktop E2E.
 
 Each checkpoint leaves standard Dataset execution and Single-Case rerun runnable.
 
@@ -266,7 +268,7 @@ Each checkpoint leaves standard Dataset execution and Single-Case rerun runnable
 - JSON round trips preserve purpose and provenance.
 - Published regression versions execute through the normal RunEngine.
 - Publishing, navigating to Evaluation Setup, selecting the new regression Dataset, and
-  running it succeeds in desktop and mobile browser tests.
+  running it succeeds in desktop browser tests.
 - Standard Dataset and Single-Case rerun tests remain green.
 
 Verification commands:
