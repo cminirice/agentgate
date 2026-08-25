@@ -19,6 +19,8 @@ from agentgate.domain import (
     TargetExecutionRequest,
     TargetSnapshot,
     Trace,
+    TraceStatus,
+    TraceTurn,
     freeze_json,
 )
 from agentgate.evaluator import EVALUATORS, evaluate_case, validate_evaluation_plan
@@ -94,7 +96,19 @@ class RunEngine:
                     trace_warnings,
                 )
                 self.repository.save_trace(trace)
-                results.extend(evaluate_case(case, trace, snapshot.evaluator_specs))
+                if trace.status != TraceStatus.COMPLETE:
+                    raise ValueError(
+                        f"trace for case {case.id} is not eligible for evaluation: "
+                        f"{trace.status.value}"
+                    )
+                case_results = evaluate_case(case, trace, snapshot.evaluator_specs)
+                results.extend(
+                    item.model_copy(update={
+                        "trace_revision": trace.revision,
+                        "trace_content_sha256": trace.content_sha256,
+                    })
+                    for item in case_results
+                )
             self.repository.save_results(results)
             completed = run.model_copy(update={
                 "status": RunStatus.COMPLETED,
@@ -150,7 +164,7 @@ class RunEngine:
         while time.monotonic() < deadline:
             trace = self.repository.get_trace(run_id, case.id)
             if trace is not None:
-                return _enrich_trace(trace, result)
+                return _enrich_trace(trace, result, case)
             time.sleep(poll_interval)
         warning = f"trace_timeout: case {case.id} (trace_id={result.trace_id})"
         LOGGER.warning(warning)
@@ -180,7 +194,7 @@ def _degraded_trace(run_id: str, case_id: str, result) -> Trace:
     )
 
 
-def _enrich_trace(trace: Trace, result) -> Trace:
+def _enrich_trace(trace: Trace, result, case) -> Trace:
     # OTLP path: the normalizer produces spans but cannot know execution-derived
     # final_output/final_state. RunEngine fills these from the adapter result
     # (orchestration enrichment, not normalization — invariant #4 preserved).
@@ -189,7 +203,29 @@ def _enrich_trace(trace: Trace, result) -> Trace:
         output = {}
     elif not isinstance(output, dict) and not hasattr(output, "items"):
         output = {"value": output}
-    return trace.model_copy(update={
+    turns = tuple(
+        TraceTurn(
+            turn_id=turn.id,
+            turn_index=index,
+            input=turn.input,
+            output_present=index == len(case.turns) - 1,
+            output=output if index == len(case.turns) - 1 else None,
+            state_present=index == len(case.turns) - 1,
+            state=result.final_state if index == len(case.turns) - 1 else {},
+            invocation_ids=(result.invocation_id,),
+            completed=True,
+        )
+        for index, turn in enumerate(case.turns)
+    )
+    payload = trace.model_dump(mode="python")
+    payload.update({
+        "status": TraceStatus.COMPLETE,
+        "turns": turns,
+        "final_output_present": True,
         "final_output": freeze_json(output),
+        "final_state_present": True,
         "final_state": result.final_state if result.final_state else trace.final_state,
+        "completed_at": result.completed_at,
+        "content_sha256": "",
     })
+    return Trace.model_validate(payload)

@@ -28,26 +28,28 @@ from agentgate.trace.normalizer import normalize_otlp_json
 
 def test_trace_correlated_by_trace_id_via_pending_mapping(tmp_path):
     repo = SQLiteRepository(tmp_path / "trace.db")
-    repo.put_pending_trace("run-1", "case-1", "inv-1", "abc123")
-    payload = _otlp_payload(trace_id="abc123", kind="AGENT", name="agent.invoke")
+    trace_id = "a" * 32
+    repo.put_pending_trace("run-1", "case-1", "inv-1", trace_id)
+    payload = _otlp_payload(trace_id=trace_id, kind="AGENT", name="agent.invoke")
     resolver = lambda tid: (
         (pending.run_id, pending.case_id)
         if (pending := repo.get_pending_trace(tid)) else None
     )
-    traces = normalize_otlp_json(payload, correlation_resolver=resolver)
-    assert len(traces) == 1
-    assert traces[0].run_id == "run-1"
-    assert traces[0].case_id == "case-1"
+    batch = normalize_otlp_json(payload, correlation_resolver=resolver)
+    assert len(batch.spans) == 1
+    assert batch.spans[0].run_id == "run-1"
+    assert batch.spans[0].case_id == "case-1"
 
 
-def test_uncorrelated_trace_falls_back_to_placeholder(tmp_path):
+def test_uncorrelated_trace_is_rejected(tmp_path):
     repo = SQLiteRepository(tmp_path / "trace.db")
-    payload = _otlp_payload(trace_id="unknown", kind="AGENT", name="span")
+    payload = _otlp_payload(trace_id="f" * 32, kind="AGENT", name="span")
     resolver = lambda tid: repo.get_pending_trace(tid) and (
         repo.get_pending_trace(tid).run_id, repo.get_pending_trace(tid).case_id
     ) or None
-    traces = normalize_otlp_json(payload, correlation_resolver=resolver)
-    assert traces[0].run_id == "otlp-external"
+    batch = normalize_otlp_json(payload, correlation_resolver=resolver)
+    assert batch.spans == ()
+    assert len(batch.errors) == 1
 
 
 # -- agentgate.* priority (#12) --
@@ -55,18 +57,19 @@ def test_uncorrelated_trace_falls_back_to_placeholder(tmp_path):
 
 def test_agentgate_attrs_take_priority_over_pending_mapping(tmp_path):
     repo = SQLiteRepository(tmp_path / "trace.db")
-    repo.put_pending_trace("pending-run", "pending-case", "inv", "tid")
+    trace_id = "c" * 32
+    repo.put_pending_trace("pending-run", "pending-case", "inv", trace_id)
     payload = {
         "resourceSpans": [{"resource": {"attributes": [
             {"key": "agentgate.run_id", "value": {"stringValue": "explicit-run"}},
             {"key": "agentgate.case_id", "value": {"stringValue": "explicit-case"}},
         ]}, "scopeSpans": [{"spans": [{
-            "traceId": "tid", "spanId": "s1", "name": "span",
+            "traceId": trace_id, "spanId": "d" * 16, "name": "span",
             "attributes": [{"key": "agentgate.kind", "value": {"stringValue": "agent"}}],
         }]}]}]}
-    traces = normalize_otlp_json(payload, correlation_resolver=lambda t: ("pending", "pending"))
-    assert traces[0].run_id == "explicit-run"
-    assert traces[0].case_id == "explicit-case"
+    batch = normalize_otlp_json(payload, correlation_resolver=lambda t: ("pending", "pending"))
+    assert batch.spans[0].run_id == "explicit-run"
+    assert batch.spans[0].case_id == "explicit-case"
 
 
 # -- OpenInference / gen_ai kind mapping (#13) --
@@ -78,25 +81,25 @@ def test_agentgate_attrs_take_priority_over_pending_mapping(tmp_path):
     ("GUARDRAIL", "event"), ("EMBEDDING", "event"), ("RERANKER", "event"),
 ])
 def test_openinference_span_kind_mapping(oi_kind, expected):
-    payload = _otlp_payload(trace_id="t1", kind="EVENT", name="s", oi_kind=oi_kind)
-    traces = normalize_otlp_json(payload)
-    assert traces[0].spans[0].kind == expected
+    payload = _otlp_payload(trace_id="1" * 32, kind="EVENT", name="s", oi_kind=oi_kind)
+    batch = normalize_otlp_json(payload, correlation_resolver=lambda _: ("run", "case"))
+    assert batch.spans[0].kind == expected
 
 
 def test_gen_ai_system_maps_to_agent():
-    payload = _otlp_payload(trace_id="t1", kind="EVENT", name="s", extra_attrs=[
+    payload = _otlp_payload(trace_id="2" * 32, kind="EVENT", name="s", extra_attrs=[
         {"key": "gen_ai.system", "value": {"stringValue": "openai"}},
     ])
-    traces = normalize_otlp_json(payload)
-    assert traces[0].spans[0].kind == "agent"
+    batch = normalize_otlp_json(payload, correlation_resolver=lambda _: ("run", "case"))
+    assert batch.spans[0].kind == "agent"
 
 
 def test_gen_ai_tool_name_maps_to_tool():
-    payload = _otlp_payload(trace_id="t1", kind="EVENT", name="s", extra_attrs=[
+    payload = _otlp_payload(trace_id="3" * 32, kind="EVENT", name="s", extra_attrs=[
         {"key": "gen_ai.tool.name", "value": {"stringValue": "search"}},
     ])
-    traces = normalize_otlp_json(payload)
-    assert traces[0].spans[0].kind == "tool"
+    batch = normalize_otlp_json(payload, correlation_resolver=lambda _: ("run", "case"))
+    assert batch.spans[0].kind == "tool"
 
 
 # -- Degraded fallback (#14) --
@@ -180,7 +183,7 @@ def _otlp_payload(trace_id, kind="EVENT", name="span", oi_kind=None, extra_attrs
         attrs.extend(extra_attrs)
     return {
         "resourceSpans": [{"resource": {"attributes": []}, "scopeSpans": [{"spans": [{
-            "traceId": trace_id, "spanId": "s1", "name": name, "attributes": attrs,
+            "traceId": trace_id, "spanId": "b" * 16, "name": name, "attributes": attrs,
         }]}]}],
     }
 

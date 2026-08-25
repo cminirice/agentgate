@@ -49,8 +49,8 @@ tests/           # Test suite
 
 The five core evaluation objects remain `Case -> Run + Trace -> Evaluator -> Result`.
 Experiment, queue, optimizer, and lineage are product modules composed around that core;
-they do not replace it. See `docs/capability-mapping.md` for capability ownership and
-implementation status.
+they do not replace it. See the [documentation index](docs/README.md) and individual
+module design records for verified capability ownership and progress.
 
 ## First Demo Target
 
@@ -63,4 +63,8 @@ The first demo should be a loan approval agent:
 
 ## P1 Demo
 
-The repository contains a working SQLite-backed loan-approval evaluation slice with a deterministic target, CLI, REST/OTLP HTTP endpoints, and Chinese Vue UI. See `docs/progress.md` for verified implementation status and `docs/demo-test-guide.md` for the complete setup and test walkthrough.
+The repository contains a working SQLite-backed loan-approval evaluation slice with a
+deterministic target, HTTP External Target support, CLI, REST/OTLP HTTP endpoints, and a
+Chinese Vue UI. Current status is maintained in the relevant Trace, Run, Dataset, and
+Evaluator documents. The original P1 walkthrough is retained under
+[history](docs/history/p1-demo/demo-test-guide.md).

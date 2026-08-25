@@ -14,6 +14,7 @@ from .evaluation import EvaluatorSpec
 from .gate import GateSpec
 from .metric import MetricPlan
 from .target import TargetSnapshot
+from .trace import TraceCompletenessPolicy
 
 
 def utcnow() -> datetime:
@@ -35,18 +36,15 @@ class RunSnapshot(DomainModel):
     metric_plan: MetricPlan
     gate_spec: GateSpec
     selected_case_ids: tuple[str, ...] | None = None
+    trace_policy: TraceCompletenessPolicy = Field(default_factory=TraceCompletenessPolicy)
     created_at: datetime = Field(default_factory=utcnow)
     snapshot_sha256: str = ""
 
     @model_validator(mode="after")
-    def set_or_verify_hash(self) -> RunSnapshot:
+    def set_or_verify_hash(self) -> "RunSnapshot":
         payload = self.model_dump(mode="json", exclude={"snapshot_sha256"})
-        # Keep hashes produced before selected-case execution was introduced readable.
-        # A real selection remains part of the immutable execution snapshot.
         if payload["selected_case_ids"] is None:
             payload.pop("selected_case_ids")
-        # Keep hashes produced before regression Case provenance was introduced readable.
-        # Non-null provenance remains part of every new regression Run snapshot hash.
         for case in payload["dataset"]["cases"]:
             if case.get("provenance") is None:
                 case.pop("provenance", None)

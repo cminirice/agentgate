@@ -108,6 +108,8 @@ class Result(DomainModel):
     judge_evidence: JudgeEvidence | None = None
     error_evidence: EvaluationErrorEvidence | None = None
     primary_failure_step: FailureStage | None = None
+    trace_revision: int | None = Field(default=None, ge=1)
+    trace_content_sha256: str | None = None
 
     @model_validator(mode="after")
     def validate_result(self) -> Result:
