@@ -1,5 +1,8 @@
 from agentgate.domain import (
-    Equals, MustBeMissing, StateExpectation, Trace,
+    Equals,
+    MustBeMissing,
+    StateExpectation,
+    Trace,
 )
 from agentgate.evaluator.observations import MISSING, observe
 from agentgate.evaluator.operators.comparison import equals, must_be_missing

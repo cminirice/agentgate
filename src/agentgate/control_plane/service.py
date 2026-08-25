@@ -2,17 +2,114 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from agentgate.case import DatasetService
 from agentgate.demo.loan import LOAN_DATASET, LOAN_DATASET_VERSION, LoanAgent
-from agentgate.evaluator import EVALUATORS
 from agentgate.domain import (
-    Case, CaseProvenance, Dataset, DatasetPurpose, DatasetVersion, RunStatus,
+    Case,
+    CaseProvenance,
+    Dataset,
+    DatasetPurpose,
+    DatasetVersion,
+    RunStatus,
+    TargetRef,
+    TargetSnapshot,
+    TargetType,
+    freeze_json,
 )
+from agentgate.evaluator import EVALUATORS
 from agentgate.run.core import RunEngine
+from agentgate.run.targets.base import (
+    EnvCredentialResolver,
+    TargetExecutionAdapter,
+    TargetIntegrationError,
+)
+from agentgate.run.targets.http import HttpTargetAdapter
+from agentgate.run.targets.python_fn import PythonFunctionTarget
 from agentgate.storage.base import AgentGateRepository
+
+
+@dataclass
+class TargetRegistration:
+    target_id: str
+    label: str
+    adapter_type: str
+    target_ref: TargetRef
+    invocation_config: dict
+    credential_ref: str | None = None
+    is_latest: bool = False
+
+    def build(
+        self, repository: AgentGateRepository
+    ) -> tuple[TargetSnapshot, TargetExecutionAdapter]:
+        snapshot = TargetSnapshot(
+            ref=self.target_ref,
+            display_name=self.label,
+            adapter_type=self.adapter_type,
+            adapter_version="1",
+            invocation_config=freeze_json(self.invocation_config),
+            credential_ref=self.credential_ref,
+        )
+        if self.adapter_type == "python_fn":
+            adapter: TargetExecutionAdapter = PythonFunctionTarget(LoanAgent(repository).execute)
+        elif self.adapter_type == "http":
+            endpoint = self.invocation_config.get("endpoint", "")
+            adapter = HttpTargetAdapter(endpoint, EnvCredentialResolver())
+        else:
+            raise ValueError(f"unknown adapter type: {self.adapter_type}")
+        return snapshot, adapter
+
+
+def _build_registry() -> dict[str, TargetRegistration]:
+    return {
+        reg.target_id: reg
+        for reg in (
+            TargetRegistration(
+                target_id="loan-agent-v1-risky",
+                label="风险版本",
+                adapter_type="python_fn",
+                target_ref=TargetRef(
+                    platform_id="demo",
+                    target_type=TargetType.AGENT,
+                    external_target_id="loan-agent",
+                    external_version_id="loan-agent-v1-risky",
+                ),
+                invocation_config={},
+            ),
+            TargetRegistration(
+                target_id="loan-agent-v2-fixed",
+                label="修复版本",
+                adapter_type="python_fn",
+                target_ref=TargetRef(
+                    platform_id="demo",
+                    target_type=TargetType.AGENT,
+                    external_target_id="loan-agent",
+                    external_version_id="loan-agent-v2-fixed",
+                ),
+                invocation_config={},
+                is_latest=True,
+            ),
+            TargetRegistration(
+                target_id="langchain-http-agent",
+                label="LangChain HTTP Agent",
+                adapter_type="http",
+                target_ref=TargetRef(
+                    platform_id="langchain",
+                    target_type=TargetType.AGENT,
+                    external_target_id="langchain-agent",
+                    external_version_id="v1",
+                ),
+                invocation_config={
+                    "endpoint": "http://localhost:8081/invoke",
+                    "timeout_seconds": 30.0,
+                },
+                credential_ref="AGENTGATE_LANGCHAIN_API_KEY",
+            ),
+        )
+    }
 
 
 class EvaluationService:
@@ -23,10 +120,20 @@ class EvaluationService:
         self.engine = RunEngine(repository)
         self.dataset_service = DatasetService(repository)
         self.dataset_service.seed(LOAN_DATASET, LOAN_DATASET_VERSION)
+        self._registry = _build_registry()
 
-    def launch(
-        self, version: str, dataset_id: str | None = None,
-        dataset_version: int | None = None, evaluator_ids: list[str] | None = None,
+    def _find_registration_by_version(self, version: str) -> TargetRegistration | None:
+        for reg in self._registry.values():
+            if reg.target_ref.external_version_id == version:
+                return reg
+        return None
+
+    def launch_target(
+        self, snapshot: TargetSnapshot, adapter: TargetExecutionAdapter,
+        dataset_id: str | None = None, dataset_version: int | None = None,
+        evaluator_ids: list[str] | None = None,
+        trace_wait_seconds: float = 30.0,
+        trace_poll_interval_seconds: float = 0.5,
     ):
         dataset_id = dataset_id or LOAN_DATASET.id
         dataset = (
@@ -43,7 +150,45 @@ class EvaluationService:
         if unknown:
             raise ValueError(f"unknown evaluators: {', '.join(sorted(unknown))}")
         return self.engine.run(
-            dataset, LoanAgent(self.repository), version, evaluators=selected
+            dataset, snapshot, adapter, selected,
+            trace_wait_seconds=trace_wait_seconds,
+            trace_poll_interval_seconds=trace_poll_interval_seconds,
+        )
+
+    def launch(
+        self, target_id: str, dataset_id: str | None = None,
+        dataset_version: int | None = None, evaluator_ids: list[str] | None = None,
+    ):
+        registration = self._registry.get(target_id)
+        if registration is None:
+            raise TargetIntegrationError.target_not_found(f"unknown target: {target_id}")
+        snapshot, adapter = registration.build(self.repository)
+        return self.launch_target(
+            snapshot, adapter, dataset_id, dataset_version, evaluator_ids
+        )
+
+    def launch_http(
+        self, target_ref: TargetRef, endpoint: str,
+        credential_ref: str | None, dataset_id: str | None = None,
+        dataset_version: int | None = None,
+        evaluator_ids: list[str] | None = None,
+        timeout_seconds: float = 30.0, trace_wait_seconds: float = 30.0,
+    ):
+        snapshot = TargetSnapshot(
+            ref=target_ref,
+            display_name=target_ref.external_target_id,
+            adapter_type="http",
+            adapter_version="1",
+            invocation_config=freeze_json({
+                "endpoint": endpoint,
+                "timeout_seconds": timeout_seconds,
+            }),
+            credential_ref=credential_ref,
+        )
+        adapter = HttpTargetAdapter(endpoint, EnvCredentialResolver())
+        return self.launch_target(
+            snapshot, adapter, dataset_id, dataset_version, evaluator_ids,
+            trace_wait_seconds=trace_wait_seconds,
         )
 
     def overview(self) -> dict:
@@ -166,15 +311,25 @@ class EvaluationService:
         if case is None:
             raise LookupError("case not found in source Run snapshot")
         version = target_version or self.latest_target_version()
-        if version not in LoanAgent.versions:
-            raise ValueError(f"unknown target version: {version}")
-        target_snapshot = source.snapshot.target.model_copy(update={"version": version})
+        registration = self._find_registration_by_version(version)
+        if registration is None:
+            raise TargetIntegrationError.version_not_found(
+                f"unknown target version: {version}"
+            )
+        _, adapter = registration.build(self.repository)
+        target_snapshot = source.snapshot.target.model_copy(
+            update={
+                "ref": source.snapshot.target.ref.model_copy(
+                    update={"external_version_id": version}
+                ),
+                "content_sha256": "",
+            }
+        )
         return self.engine.run(
             source.snapshot.dataset,
-            LoanAgent(self.repository),
-            version,
+            target_snapshot,
+            adapter,
             evaluators=source.snapshot.evaluator_specs,
-            target_snapshot=target_snapshot,
             metric_plan=source.snapshot.metric_plan,
             gate_spec=source.snapshot.gate_spec,
             selected_case_ids=(case.id,),
@@ -183,9 +338,11 @@ class EvaluationService:
             rerun_case_id=case.id,
         )
 
-    @staticmethod
-    def latest_target_version() -> str:
-        return LoanAgent.versions[-1]
+    def latest_target_version(self) -> str:
+        for reg in self._registry.values():
+            if reg.is_latest:
+                return reg.target_ref.external_version_id
+        return next(iter(self._registry.values())).target_ref.external_version_id
 
     def rerun_comparison(self, rerun_run_id: str) -> dict:
         rerun = self.repository.get_run(rerun_run_id)
@@ -232,8 +389,8 @@ class EvaluationService:
             "rerun_run_id": rerun.id,
             "case_id": case_id,
             "case_name": case.name,
-            "before_target_version": parent.snapshot.target.version,
-            "after_target_version": rerun.snapshot.target.version,
+            "before_target_version": parent.snapshot.target.ref.external_version_id,
+            "after_target_version": rerun.snapshot.target.ref.external_version_id,
             "overall": overall,
             "counts": counts,
             "evaluators": comparisons,
@@ -242,14 +399,17 @@ class EvaluationService:
     def trace(self, run_id: str, case_id: str):
         return self.repository.get_trace(run_id, case_id)
 
-    def versions(self) -> list[dict[str, str]]:
+    def versions(self) -> list[dict]:
         return [
             {
-                "id": version,
-                "label": "风险版本" if version.endswith("risky") else "修复版本",
-                "is_latest": version == self.latest_target_version(),
+                "id": reg.target_id,
+                "label": reg.label,
+                "adapter_type": reg.adapter_type,
+                "endpoint": reg.invocation_config.get("endpoint"),
+                "credential_ref": reg.credential_ref,
+                "is_latest": reg.is_latest,
             }
-            for version in LoanAgent.versions
+            for reg in self._registry.values()
         ]
 
     def datasets(self) -> list[dict]:

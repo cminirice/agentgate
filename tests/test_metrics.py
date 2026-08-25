@@ -1,8 +1,15 @@
 import pytest
 
 from agentgate.domain import (
-    CheckResult, Dimension, FailureObservation, FailureStage, Kind, MetricPlan,
-    Outcome, Result, Severity,
+    CheckResult,
+    Dimension,
+    FailureObservation,
+    FailureStage,
+    Kind,
+    MetricPlan,
+    Outcome,
+    Result,
+    Severity,
 )
 from agentgate.result.calc_metrics import calculate_metrics
 

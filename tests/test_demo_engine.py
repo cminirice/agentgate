@@ -18,3 +18,5 @@ def test_risky_fails_and_fixed_improves(tmp_path):
     failures = [result for result in risky_report.results if result.outcome == "fail"]
     assert all(result.primary_failure_step for result in failures)
     assert repository.get_business_state("loan", "A-100") is not None
+    assert risky.snapshot.target.adapter_type == "python_fn"
+    assert fixed.snapshot.target.adapter_type == "python_fn"

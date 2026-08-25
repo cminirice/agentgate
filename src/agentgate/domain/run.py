@@ -8,11 +8,12 @@ from uuid import uuid4
 
 from pydantic import Field, model_validator
 
-from .base import DomainModel, FrozenJsonObject, content_sha256
+from .base import DomainModel, content_sha256
 from .case import DatasetVersion
 from .evaluation import EvaluatorSpec
 from .gate import GateSpec
 from .metric import MetricPlan
+from .target import TargetSnapshot
 
 
 def utcnow() -> datetime:
@@ -24,13 +25,6 @@ class RunStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-class TargetSnapshot(DomainModel):
-    name: str
-    version: str
-    provider: str
-    config: FrozenJsonObject = Field(default_factory=FrozenJsonObject)
 
 
 class RunSnapshot(DomainModel):
@@ -45,7 +39,7 @@ class RunSnapshot(DomainModel):
     snapshot_sha256: str = ""
 
     @model_validator(mode="after")
-    def set_or_verify_hash(self) -> "RunSnapshot":
+    def set_or_verify_hash(self) -> RunSnapshot:
         payload = self.model_dump(mode="json", exclude={"snapshot_sha256"})
         # Keep hashes produced before selected-case execution was introduced readable.
         # A real selection remains part of the immutable execution snapshot.
@@ -75,6 +69,7 @@ class Run(DomainModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error: str | None = None
+    trace_warnings: tuple[str, ...] = ()
     parent_run_id: str | None = None
     root_run_id: str | None = None
     rerun_case_id: str | None = None

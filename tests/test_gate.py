@@ -1,6 +1,13 @@
 from agentgate.domain import (
-    CheckResult, Dimension, FailureObservation, FailureStage, GateSpec, Kind,
-    Outcome, Result, Severity,
+    CheckResult,
+    Dimension,
+    FailureObservation,
+    FailureStage,
+    GateSpec,
+    Kind,
+    Outcome,
+    Result,
+    Severity,
 )
 from agentgate.result.gate import decide_gate
 

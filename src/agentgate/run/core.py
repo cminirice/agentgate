@@ -1,54 +1,54 @@
+"""RunEngine orchestrates Case-by-Case evaluation against a target adapter."""
+
 from __future__ import annotations
 
+import logging
+import time
 from datetime import UTC, datetime
 from typing import Protocol
+from uuid import uuid4
 
 from agentgate.domain import (
-    Case, DatasetVersion, DatasetVersionStatus, GateSpec, MetricPlan, Run, RunSnapshot,
-    RunStatus, TargetSnapshot, Trace,
+    DatasetVersion,
+    DatasetVersionStatus,
+    GateSpec,
+    MetricPlan,
+    Run,
+    RunSnapshot,
+    RunStatus,
+    TargetExecutionRequest,
+    TargetSnapshot,
+    Trace,
+    freeze_json,
 )
 from agentgate.evaluator import EVALUATORS, evaluate_case, validate_evaluation_plan
 from agentgate.result.service import build_report
+from agentgate.run.targets.base import TargetExecutionAdapter
 from agentgate.storage.base import AgentGateRepository
 
-
-class Target(Protocol):
-    def execute(self, run_id: str, case: Case, version: str) -> Trace: ...
+LOGGER = logging.getLogger(__name__)
 
 
 class ExternalSchedulerAdapter(Protocol):
-    def execute(self, target: Target, run_id: str, case: Case, version: str) -> Trace: ...
+    """Forward-looking boundary for future async/external scheduling."""
 
-
-class LocalScheduler:
-    def execute(self, target: Target, run_id: str, case: Case, version: str) -> Trace:
-        return target.execute(run_id, case, version)
-
-
-class PythonFunctionTarget:
-    def __init__(self, function) -> None:
-        self.function = function
-
-    def execute(self, run_id: str, case: Case, version: str) -> Trace:
-        return self.function(run_id, case, version)
+    def execute(
+        self, adapter: TargetExecutionAdapter, request: TargetExecutionRequest
+    ) -> object: ...
 
 
 class RunEngine:
-    def __init__(
-        self, repository: AgentGateRepository,
-        scheduler: ExternalSchedulerAdapter | None = None,
-    ) -> None:
+    def __init__(self, repository: AgentGateRepository) -> None:
         self.repository = repository
-        self.scheduler = scheduler or LocalScheduler()
 
     def run(
-        self, dataset: DatasetVersion, target: Target, target_version: str,
-        provider: str = "deterministic", evaluators=EVALUATORS,
-        *, target_snapshot: TargetSnapshot | None = None,
-        metric_plan: MetricPlan | None = None, gate_spec: GateSpec | None = None,
+        self, dataset: DatasetVersion, target_snapshot: TargetSnapshot,
+        adapter: TargetExecutionAdapter, evaluators=EVALUATORS,
+        *, metric_plan: MetricPlan | None = None, gate_spec: GateSpec | None = None,
         selected_case_ids: tuple[str, ...] | None = None,
         parent_run_id: str | None = None, root_run_id: str | None = None,
         rerun_case_id: str | None = None,
+        trace_wait_seconds: float = 30.0, trace_poll_interval_seconds: float = 0.5,
     ) -> Run:
         if dataset.status != DatasetVersionStatus.PUBLISHED:
             raise ValueError("only published Dataset versions can be evaluated")
@@ -65,9 +65,7 @@ class RunEngine:
                 raise ValueError(f"unknown selected Cases: {', '.join(sorted(unknown))}")
         snapshot = RunSnapshot(
             dataset=dataset,
-            target=target_snapshot or TargetSnapshot(
-                name="loan-agent", version=target_version, provider=provider
-            ),
+            target=target_snapshot,
             evaluator_specs=selected,
             primary_evaluator_ids=tuple(item.id for item in selected),
             metric_plan=metric_plan or MetricPlan(),
@@ -84,18 +82,24 @@ class RunEngine:
         )
         self.repository.save_run(run)
         results = []
+        trace_warnings: list[str] = []
         try:
             cases = dataset.cases if selected_case_ids is None else tuple(
                 case for case in dataset.cases if case.id in set(selected_case_ids)
             )
             for case in cases:
-                trace = self.scheduler.execute(target, run.id, case, target_version)
+                result = self._invoke_case(run.id, case, target_snapshot, adapter)
+                trace = self._resolve_trace(
+                    run.id, case, result, trace_wait_seconds, trace_poll_interval_seconds,
+                    trace_warnings,
+                )
                 self.repository.save_trace(trace)
                 results.extend(evaluate_case(case, trace, snapshot.evaluator_specs))
             self.repository.save_results(results)
             completed = run.model_copy(update={
                 "status": RunStatus.COMPLETED,
                 "completed_at": datetime.now(UTC),
+                "trace_warnings": tuple(trace_warnings),
             })
             self.repository.save_run(completed)
             return completed
@@ -104,12 +108,88 @@ class RunEngine:
                 "status": RunStatus.FAILED,
                 "completed_at": datetime.now(UTC),
                 "error": str(exc),
+                "trace_warnings": tuple(trace_warnings),
             })
             self.repository.save_run(failed)
             raise
+
+    def _invoke_case(self, run_id, case, target_snapshot, adapter):
+        invocation_id = str(uuid4())
+        idempotency_key = uuid4().hex
+        trace_id = uuid4().hex
+        parent_span_id = uuid4().hex[:16]
+        traceparent = f"00-{trace_id}-{parent_span_id}-01"
+        self.repository.put_pending_trace(run_id, case.id, invocation_id, trace_id)
+        request = TargetExecutionRequest(
+            invocation_id=invocation_id,
+            idempotency_key=idempotency_key,
+            run_id=run_id,
+            case_id=case.id,
+            turn_id=None,
+            target=target_snapshot,
+            input=freeze_json({
+                "turns": [
+                    {"turn_id": turn.id, "input": turn.input.to_dict()}
+                    for turn in case.turns
+                ]
+            }),
+            state=case.initial_state,
+            timeout_seconds=float(
+                target_snapshot.invocation_config.get("timeout_seconds") or 30.0
+            ),
+            traceparent=traceparent,
+        )
+        return adapter.execute(request)
+
+    def _resolve_trace(
+        self, run_id, case, result, trace_wait_seconds, poll_interval, trace_warnings
+    ) -> Trace:
+        if result.inline_trace is not None:
+            return result.inline_trace
+        deadline = time.monotonic() + trace_wait_seconds
+        while time.monotonic() < deadline:
+            trace = self.repository.get_trace(run_id, case.id)
+            if trace is not None:
+                return _enrich_trace(trace, result)
+            time.sleep(poll_interval)
+        warning = f"trace_timeout: case {case.id} (trace_id={result.trace_id})"
+        LOGGER.warning(warning)
+        trace_warnings.append(warning)
+        return _degraded_trace(run_id, case.id, result)
 
     def report(self, run_id: str):
         run = self.repository.get_run(run_id)
         if run is None:
             return None
         return build_report(run, self.repository.list_results(run_id))
+
+
+def _degraded_trace(run_id: str, case_id: str, result) -> Trace:
+    output = result.output
+    if output is None:
+        output = {}
+    elif not isinstance(output, dict) and not hasattr(output, "items"):
+        output = {"value": output}
+    return Trace(
+        run_id=run_id,
+        case_id=case_id,
+        spans=(),
+        turns=(),
+        final_output=freeze_json(output),
+        final_state=result.final_state,
+    )
+
+
+def _enrich_trace(trace: Trace, result) -> Trace:
+    # OTLP path: the normalizer produces spans but cannot know execution-derived
+    # final_output/final_state. RunEngine fills these from the adapter result
+    # (orchestration enrichment, not normalization — invariant #4 preserved).
+    output = result.output
+    if output is None:
+        output = {}
+    elif not isinstance(output, dict) and not hasattr(output, "items"):
+        output = {"value": output}
+    return trace.model_copy(update={
+        "final_output": freeze_json(output),
+        "final_state": result.final_state if result.final_state else trace.final_state,
+    })

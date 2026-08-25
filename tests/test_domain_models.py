@@ -2,8 +2,14 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from agentgate.domain import (
-    Case, CaseTurn, EvaluatorSpec, MatchesJsonSchema, RuleEvaluatorSpec,
-    StateExpectation, WithinRange, content_sha256,
+    Case,
+    CaseTurn,
+    EvaluatorSpec,
+    MatchesJsonSchema,
+    RuleEvaluatorSpec,
+    StateExpectation,
+    WithinRange,
+    content_sha256,
 )
 
 

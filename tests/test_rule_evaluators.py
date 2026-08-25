@@ -1,6 +1,12 @@
 from agentgate.control_plane import EvaluationService
 from agentgate.domain import (
-    Dimension, FailureStage, Outcome, RuleEvaluatorSpec, SpanKind, Trace, TraceSpan,
+    Dimension,
+    FailureStage,
+    Outcome,
+    RuleEvaluatorSpec,
+    SpanKind,
+    Trace,
+    TraceSpan,
 )
 from agentgate.evaluator.calc_score import calculate_result
 from agentgate.evaluator.models import CheckDraft, Evaluation, FailureCandidate

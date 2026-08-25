@@ -2,7 +2,12 @@ import pytest
 
 from agentgate.case import DatasetValidationError, validate_dataset_version
 from agentgate.domain import (
-    Case, CaseTurn, DatasetVersion, Equals, MatchesJsonSchema, StateExpectation,
+    Case,
+    CaseTurn,
+    DatasetVersion,
+    Equals,
+    MatchesJsonSchema,
+    StateExpectation,
 )
 
 

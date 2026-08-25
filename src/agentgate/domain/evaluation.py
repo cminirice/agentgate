@@ -95,7 +95,7 @@ class RuleEvaluatorSpec(EvaluatorBase):
     config: FrozenJsonObject = Field(default_factory=FrozenJsonObject)
 
     @model_validator(mode="after")
-    def operator_fields_match(self) -> "RuleEvaluatorSpec":
+    def operator_fields_match(self) -> RuleEvaluatorSpec:
         if (self.operator is None) != (self.operator_version is None):
             raise ValueError("operator and operator_version must both be present or absent")
         return self

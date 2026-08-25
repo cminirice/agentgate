@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
 from agentgate.domain import Dataset, DatasetVersion, Result, Run, Trace
+
+
+@dataclass(frozen=True)
+class PendingTraceCorrelation:
+    run_id: str
+    case_id: str
+    invocation_id: str
+    trace_id: str
+    created_at: datetime
 
 
 class AgentGateRepository(Protocol):
@@ -37,3 +47,7 @@ class AgentGateRepository(Protocol):
     def list_results(self, run_id: str) -> list[Result]: ...
     def put_business_state(self, namespace: str, key: str, value: dict) -> None: ...
     def get_business_state(self, namespace: str, key: str) -> dict | None: ...
+    def put_pending_trace(
+        self, run_id: str, case_id: str, invocation_id: str, trace_id: str
+    ) -> None: ...
+    def get_pending_trace(self, trace_id: str) -> PendingTraceCorrelation | None: ...

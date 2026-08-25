@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from agentgate.control_plane import EvaluationService
+from agentgate.domain import TargetRef, TargetType
 from agentgate.storage.sqlite import SQLiteRepository
 
 app = typer.Typer(help="AgentGate 演示评估工具", no_args_is_help=True)
@@ -33,7 +34,7 @@ def evaluate(version: str = typer.Option("loan-agent-v2-fixed", help="目标代�
 @app.command("runs")
 def list_runs(database: Path | None = typer.Option(None, help="SQLite 数据库路径")) -> None:
     for run in _service(database).repository.list_runs():
-        typer.echo(f"{run.id}\t{run.snapshot.target.version}\t{run.status}")
+        typer.echo(f"{run.id}\t{run.snapshot.target.ref.external_version_id}\t{run.status}")
 
 
 @app.command()
@@ -45,6 +46,41 @@ def show(run_id: str, database: Path | None = typer.Option(None, help="SQLite �
         "run": report.run.model_dump(mode="json"),
         "results": [item.model_dump(mode="json") for item in report.results],
         "metrics": [item.model_dump(mode="json") for item in report.metrics],
+        "gate": report.gate.model_dump(mode="json"),
+    }, ensure_ascii=False))
+
+
+@app.command("evaluate-http")
+def evaluate_http(
+    endpoint: str = typer.Option(..., help="Agent HTTP endpoint URL"),
+    target_id: str = typer.Option(..., help="External target ID"),
+    version_id: str = typer.Option(..., help="External version ID"),
+    credential_ref: str = typer.Option("", help="Credential env var name"),
+    platform_id: str = typer.Option("external", help="Platform ID"),
+    dataset: str = typer.Option("loan-risk-policy", help="Dataset ID"),
+    dataset_version: int = typer.Option(1, help="Dataset version"),
+    timeout_seconds: float = typer.Option(30.0, help="HTTP request timeout"),
+    database: Path | None = typer.Option(None, help="SQLite database path"),
+) -> None:
+    """Launch an HTTP target evaluation against a published dataset."""
+    service = _service(database)
+    run = service.launch_http(
+        TargetRef(
+            platform_id=platform_id,
+            target_type=TargetType.AGENT,
+            external_target_id=target_id,
+            external_version_id=version_id,
+        ),
+        endpoint=endpoint,
+        credential_ref=credential_ref or None,
+        dataset_id=dataset,
+        dataset_version=dataset_version,
+        timeout_seconds=timeout_seconds,
+    )
+    report = service.run_detail(run.id)
+    typer.echo(json.dumps({
+        "run_id": run.id,
+        "status": run.status,
         "gate": report.gate.model_dump(mode="json"),
     }, ensure_ascii=False))
 

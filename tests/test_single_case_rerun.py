@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from agentgate.control_plane.service import (
     EvaluationService,
@@ -47,7 +47,7 @@ def test_repeated_single_case_rerun_keeps_direct_parent_and_root(tmp_path):
     first = service.rerun_case(original.id, case_id)
     second = service.rerun_case(first.id, case_id, "loan-agent-v1-risky")
 
-    assert first.snapshot.target.version == service.latest_target_version()
+    assert first.snapshot.target.ref.external_version_id == service.latest_target_version()
     assert second.parent_run_id == first.id
     assert second.root_run_id == original.id
 

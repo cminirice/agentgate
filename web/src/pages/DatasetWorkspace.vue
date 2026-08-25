@@ -45,6 +45,15 @@ const activeCaseIssues = computed(() => {
   const prefix = `cases[${caseIndex}]`
   return validationIssues.value.filter(issue => issue.path.startsWith(prefix))
 })
+const groupedTargetVersions = computed(() => {
+  const groups: Record<string, { label: string; items: Version[] }> = {}
+  for (const item of targetVersions.value) {
+    const key = item.adapter_type ?? 'python_fn'
+    if (!groups[key]) groups[key] = { label: key === 'http' ? 'HTTP Agent' : 'Demo Agent', items: [] }
+    groups[key].items.push(item)
+  }
+  return Object.values(groups)
+})
 
 function chooseVersion(preferredId = '') {
   const selected = versions.value.find(item => item.id === preferredId)
@@ -398,7 +407,9 @@ onMounted(async () => {
         <span v-else>草稿不能运行，请先验证并发布。</span>
       </div>
       <el-select v-model="selectedAgent" data-testid="dataset-agent-select" aria-label="运行 Agent 版本">
-        <el-option v-for="item in targetVersions" :key="item.id" :label="item.label" :value="item.id" />
+        <el-option-group v-for="group in groupedTargetVersions" :key="group.label" :label="group.label">
+          <el-option v-for="item in group.items" :key="item.id" :label="`${item.label} · ${item.id}${item.is_latest ? '（最新）' : ''}`" :value="item.id" />
+        </el-option-group>
       </el-select>
       <el-select v-model="selectedEvaluators" multiple collapse-tags aria-label="运行评估器">
         <el-option v-for="item in evaluators" :key="item.id" :label="item.name" :value="item.id" />

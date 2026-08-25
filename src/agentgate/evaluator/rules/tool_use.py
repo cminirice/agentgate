@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from agentgate.domain import (
-    FailureStage, Kind, MethodRef, Outcome, SpanKind, ToolArgumentExpectation,
+    FailureStage,
+    Kind,
+    MethodRef,
+    Outcome,
+    SpanKind,
+    ToolArgumentExpectation,
 )
 
 from ..base import Evaluator

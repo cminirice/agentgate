@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from agentgate.domain import (
-    DatasetVersion, DomainModel, ToolArgumentExpectation,
+    DatasetVersion,
+    DomainModel,
+    ToolArgumentExpectation,
 )
 
 

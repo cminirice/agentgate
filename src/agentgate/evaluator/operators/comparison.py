@@ -5,7 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agentgate.domain import Equals, MatchesPattern, MustBeMissing, OneOf, WithinRange, WithinTolerance
+from agentgate.domain import (
+    Equals,
+    MatchesPattern,
+    MustBeMissing,
+    OneOf,
+    WithinRange,
+    WithinTolerance,
+)
 
 from ..models import OperatorOutcome
 from ..observations import MISSING
