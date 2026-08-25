@@ -13,6 +13,7 @@ from .case import DatasetVersion
 from .evaluation import EvaluatorSpec
 from .gate import GateSpec
 from .metric import MetricPlan
+from .trace import TraceCompletenessPolicy
 
 
 def utcnow() -> datetime:
@@ -40,6 +41,7 @@ class RunSnapshot(DomainModel):
     primary_evaluator_ids: tuple[str, ...]
     metric_plan: MetricPlan
     gate_spec: GateSpec
+    trace_policy: TraceCompletenessPolicy = Field(default_factory=TraceCompletenessPolicy)
     created_at: datetime = Field(default_factory=utcnow)
     snapshot_sha256: str = ""
 

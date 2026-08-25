@@ -5,7 +5,7 @@ from typing import Protocol
 
 from agentgate.domain import (
     Case, DatasetVersion, DatasetVersionStatus, GateSpec, MetricPlan, Run, RunSnapshot,
-    RunStatus, TargetSnapshot, Trace,
+    RunStatus, TargetSnapshot, Trace, TraceStatus,
 )
 from agentgate.evaluator import EVALUATORS, evaluate_case, validate_evaluation_plan
 from agentgate.result.service import build_report
@@ -70,7 +70,19 @@ class RunEngine:
             for case in dataset.cases:
                 trace = self.scheduler.execute(target, run.id, case, target_version)
                 self.repository.save_trace(trace)
-                results.extend(evaluate_case(case, trace, snapshot.evaluator_specs))
+                if trace.status != TraceStatus.COMPLETE:
+                    raise ValueError(
+                        f"trace for case {case.id} is not eligible for evaluation: "
+                        f"{trace.status.value}"
+                    )
+                case_results = evaluate_case(case, trace, snapshot.evaluator_specs)
+                results.extend(
+                    result.model_copy(update={
+                        "trace_revision": trace.revision,
+                        "trace_content_sha256": trace.content_sha256,
+                    })
+                    for result in case_results
+                )
             self.repository.save_results(results)
             completed = run.model_copy(update={
                 "status": RunStatus.COMPLETED,

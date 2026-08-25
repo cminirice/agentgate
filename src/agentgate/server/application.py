@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -12,7 +12,11 @@ from agentgate.case import DatasetExport, DatasetValidationError
 from agentgate.control_plane import EvaluationService
 from agentgate.domain import Case
 from agentgate.storage.sqlite import SQLiteRepository
-from agentgate.trace.receivers.otlp_http import ingest_otlp_http_json
+from agentgate.trace.receivers.otlp_http import (
+    decode_content_encoding, encode_otlp_http_protobuf_response,
+    ingest_otlp_http_json, ingest_otlp_http_protobuf,
+)
+from agentgate.trace.models import OtlpIngestionLimits
 
 
 class LaunchRequest(BaseModel):
@@ -261,16 +265,41 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="trace not found")
         return trace
 
-    @app.post("/v1/traces", status_code=202)
+    @app.post("/v1/traces", status_code=200)
     async def receive_otlp(request: Request):
         content_type = request.headers.get("content-type", "")
-        if "json" not in content_type:
-            raise HTTPException(status_code=415, detail="P1 receiver accepts OTLP/HTTP JSON")
+        body = await request.body()
+        limits = OtlpIngestionLimits(
+            max_request_bytes=int(os.getenv(
+                "AGENTGATE_OTLP_MAX_REQUEST_BYTES", str(4 * 1024 * 1024)
+            )),
+            max_decompressed_bytes=int(os.getenv(
+                "AGENTGATE_OTLP_MAX_DECOMPRESSED_BYTES", str(8 * 1024 * 1024)
+            )),
+        )
+        if len(body) > limits.max_request_bytes:
+            raise HTTPException(status_code=413, detail="OTLP request body is too large")
+        content_encoding = request.headers.get("content-encoding", "")
+        if content_encoding.strip().lower() not in ("", "identity", "gzip"):
+            raise HTTPException(status_code=415, detail="unsupported Content-Encoding")
         try:
-            count = ingest_otlp_http_json(await request.json(), repository)
-        except (TypeError, ValueError) as exc:
+            body = decode_content_encoding(
+                body, content_encoding, limits
+            )
+            if "application/x-protobuf" in content_type:
+                report = ingest_otlp_http_protobuf(body, repository, limits)
+                return Response(
+                    encode_otlp_http_protobuf_response(report),
+                    status_code=200,
+                    media_type="application/x-protobuf",
+                )
+            if "json" not in content_type:
+                raise HTTPException(status_code=415, detail="unsupported OTLP content type")
+            import json
+            report = ingest_otlp_http_json(json.loads(body), repository, limits)
+        except (OSError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"accepted_spans": count}
+        return report
 
     app.include_router(api)
     app.state.repository = repository

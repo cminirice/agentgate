@@ -23,6 +23,9 @@ from .result import (
     Outcome, Result,
 )
 from .run import Run, RunSnapshot, RunStatus, TargetSnapshot
-from .trace import SpanKind, Trace, TraceSpan, TraceTurn
+from .trace import (
+    SpanKind, Trace, TraceCompletenessPolicy, TraceSpan, TraceStatus, TraceTurn,
+    canonical_span_id, canonical_trace_id,
+)
 
 __all__ = [name for name in globals() if not name.startswith("_")]
