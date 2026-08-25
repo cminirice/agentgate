@@ -9,15 +9,18 @@ from uuid import uuid4
 from agentgate.case import DatasetService
 from agentgate.demo.loan import LOAN_DATASET, LOAN_DATASET_VERSION, LoanAgent
 from agentgate.domain import (
+    Case,
+    CaseProvenance,
+    Dataset,
+    DatasetPurpose,
+    DatasetVersion,
+    RunStatus,
     TargetRef,
     TargetSnapshot,
     TargetType,
     freeze_json,
 )
 from agentgate.evaluator import EVALUATORS
-from agentgate.domain import (
-    Case, CaseProvenance, Dataset, DatasetPurpose, DatasetVersion, RunStatus,
-)
 from agentgate.run.core import RunEngine
 from agentgate.run.targets.base import (
     EnvCredentialResolver,
@@ -100,7 +103,7 @@ def _build_registry() -> dict[str, TargetRegistration]:
                     external_version_id="v1",
                 ),
                 invocation_config={
-                    "endpoint": "http://localhost:8081",
+                    "endpoint": "http://localhost:8081/invoke",
                     "timeout_seconds": 30.0,
                 },
                 credential_ref="AGENTGATE_LANGCHAIN_API_KEY",

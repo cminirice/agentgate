@@ -42,6 +42,15 @@ const caseResults = computed(() => (report.value?.run.snapshot.dataset.cases ?? 
 const selectedAgent = computed(() => versions.value.find(item => item.id === selectedVersion.value))
 const selectedDatasetInfo = computed(() => datasets.value.find(item => item.id === selectedDataset.value))
 const regressionDatasets = computed(() => datasets.value.filter(item => item.purpose === 'regression'))
+const groupedVersions = computed(() => {
+  const groups: Record<string, { label: string; items: Version[] }> = {}
+  for (const item of versions.value) {
+    const key = item.adapter_type ?? 'python_fn'
+    if (!groups[key]) groups[key] = { label: key === 'http' ? 'HTTP Agent' : 'Demo Agent', items: [] }
+    groups[key].items.push(item)
+  }
+  return Object.values(groups)
+})
 
 async function refresh() {
   const [summary, targetVersions, datasetOptions, evaluatorOptions, recentRuns] = await Promise.all([
@@ -177,7 +186,9 @@ onUnmounted(() => window.removeEventListener('popstate', onPopState))
           <article class="config-card">
             <div class="card-index">A</div><label>Agent</label>
             <el-select v-model="selectedVersion" data-testid="agent-select" aria-label="Agent 版本">
-              <el-option v-for="item in versions" :key="item.id" :label="`${item.label} · ${item.adapter_type === 'http' ? 'HTTP' : 'Demo'}`" :value="item.id" />
+              <el-option-group v-for="group in groupedVersions" :key="group.label" :label="group.label">
+                <el-option v-for="item in group.items" :key="item.id" :label="`${item.label} · ${item.id}${item.is_latest ? '（最新）' : ''}`" :value="item.id" />
+              </el-option-group>
             </el-select>
             <p>{{ selectedAgent?.label }}，{{ selectedAgent?.adapter_type === 'http' ? 'HTTP Agent' : '使用确定性 Provider 执行' }}。</p>
           </article>
@@ -281,7 +292,7 @@ onUnmounted(() => window.removeEventListener('popstate', onPopState))
         <p><b>Case：</b>{{ caseNames[rerunCaseId] }}</p>
         <p><b>固定Dataset：</b>{{ report.run.snapshot.dataset.dataset_name }} v{{ report.run.snapshot.dataset.version }}</p>
         <p><b>原Agent版本：</b>{{ report.run.snapshot.target.ref.external_version_id }}</p>
-        <el-form label-position="top"><el-form-item label="重跑Agent版本"><el-select v-model="rerunVersion" data-testid="rerun-version-select" style="width: 100%"><el-option v-for="item in versions" :key="item.id" :label="`${item.label} · ${item.id}${item.is_latest ? '（最新）' : ''}`" :value="item.id" /></el-select></el-form-item></el-form>
+        <el-form label-position="top"><el-form-item label="重跑Agent版本"><el-select v-model="rerunVersion" data-testid="rerun-version-select" style="width: 100%"><el-option-group v-for="group in groupedVersions" :key="group.label" :label="group.label"><el-option v-for="item in group.items" :key="item.id" :label="`${item.label} · ${item.id}${item.is_latest ? '（最新）' : ''}`" :value="item.id" /></el-option-group></el-select></el-form-item></el-form>
         <el-alert type="info" :closable="false" show-icon title="Case、评估器、Metric和Gate均复用原Run配置。" />
       </template>
       <template #footer><el-button @click="rerunOpen = false">取消</el-button><el-button type="primary" :loading="rerunLoading" :disabled="!rerunVersion" data-testid="submit-rerun" @click="submitRerun">开始重跑</el-button></template>
