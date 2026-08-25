@@ -1,13 +1,13 @@
 # Control Panel
 
-The control panel is the Chinese Vue 3 Web interface backed by real AgentGate APIs. It
-coordinates workflows but does not duplicate domain rules in TypeScript.
+The control panel is the Vue 3 Web interface for Dataset management, evaluation launch,
+progress, reports, Badcases, Trace drill-down, and later analysis workflows.
 
-Current workspaces:
+```text
+web/ -> server/ -> application/ -> core capabilities
+```
 
-- Evaluation launch and report viewing: implemented P1 demo.
-- Dataset and Case management: planned in
-  [the Dataset implementation plan](../dataset/implementation-plan.md).
-
-Future plans here should cover navigation, shared components, accessibility, responsive
-behavior, and end-to-end browser acceptance tests.
+The Web UI does not query storage directly and does not duplicate domain rules in
+TypeScript. The inherited Chinese P1 UI remains the working baseline while the backend
+architecture is refactored. Its setup and test instructions are preserved under
+[P1 demo history](../history/p1-demo/).

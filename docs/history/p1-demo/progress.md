@@ -1,5 +1,10 @@
 # P1 Demo Progress
 
+> [!NOTE]
+> Historical `goal/p1-demo` record. Package paths here are not authoritative for
+> `refactor-1`; see [the architecture review ledger](../../architecture-review-ledger.md).
+
+
 ## Current checkpoint
 
 The P1 loan-approval vertical slice is implemented on `goal/p1-demo`.

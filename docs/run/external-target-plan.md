@@ -1,5 +1,11 @@
 # External Target Integration Plan
 
+> [!IMPORTANT]
+> Pre-refactor design record. Behavior and acceptance criteria remain useful, but file
+> paths and module ownership are superseded by
+> [the architecture review ledger](../architecture-review-ledger.md).
+
+
 ## Goal
 
 Define how AgentGate discovers, snapshots, and executes externally owned Agent and Skill

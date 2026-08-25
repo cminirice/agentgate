@@ -1,5 +1,10 @@
 # AgentGate Implementation Roadmap
 
+> [!NOTE]
+> Superseded planning record. Package ownership here is not authoritative for
+> `refactor-1`; see [the architecture review ledger](../../architecture-review-ledger.md).
+
+
 ## Purpose
 
 This is the project-level implementation plan. It defines delivery order, module

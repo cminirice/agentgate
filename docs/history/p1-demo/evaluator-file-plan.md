@@ -1,5 +1,10 @@
 # Evaluator Refactor File Plan
 
+> [!NOTE]
+> Historical `goal/p1-demo` record. Package paths here are not authoritative for
+> `refactor-1`; see [the architecture review ledger](../../architecture-review-ledger.md).
+
+
 This document records the implemented file-level change set for the evaluator refactor.
 
 Status labels:

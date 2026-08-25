@@ -1,8 +1,13 @@
 # Control Plane Design
 
+> [!NOTE]
+> Historical `goal/p1-demo` record. Package paths here are not authoritative for
+> `refactor-1`; see [the architecture review ledger](../../architecture-review-ledger.md).
+
+
 ## Status
 
-This document separates the current P1 structure from the recommended architecture. Every file or API not marked implemented is a planned boundary. See [progress.md](../progress.md) for verified project status.
+This document separates the current P1 structure from the recommended architecture. Every file or API not marked implemented is a planned boundary. See [progress.md](progress.md) for verified project status.
 
 ## Terms
 

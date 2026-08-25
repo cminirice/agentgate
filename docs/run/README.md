@@ -1,15 +1,25 @@
 # Run
 
-This module owns immutable Run snapshots, target execution, lifecycle, and the local POC
-scheduler boundary. Add detailed plans here when Run behavior changes.
+The Run capability owns deterministic execution mechanics:
 
-Dataset content, evaluator definitions, MetricPlan, and GateSpec are captured by the Run
-but remain owned by their respective modules.
+```text
+run/
+├── engine.py
+├── process_manager.py
+├── retry.py
+├── manifest.py
+├── artifacts.py
+└── target_protocol.py
+```
+
+Complete Run lifecycle orchestration belongs in `application/run_management.py`.
+Concrete Agent integrations belong in `integrations/targets/`, and Celery background
+submission belongs in `integrations/job_dispatchers/`.
 
 Detailed plans:
 
-- [External target integration](external-target-plan.md): Agent/Skill target terminology,
-  external metadata/version adapters, immutable TargetSnapshot, execution adapters, and
-  Trace correlation.
-- [Instrumented Demo Agent](demo-agent-plan.md): deterministic loan Agent HTTP service,
-  OpenTelemetry SDK spans, OTLP export, and end-to-end evaluation acceptance.
+- [External target integration](external-target-plan.md)
+- [Instrumented Demo Agent](demo-agent-plan.md)
+
+Both plans retain useful contracts and acceptance criteria, but their pre-refactor file
+maps are not authoritative.
