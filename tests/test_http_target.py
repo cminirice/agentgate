@@ -66,6 +66,54 @@ def test_http_adapter_sends_required_headers():
     assert headers.get("content-type") == "application/json"
 
 
+def test_http_adapter_flattens_single_turn_envelope():
+    """A single-turn Case must reach the wire as the documented flat Invoke contract."""
+    with FakeHttpAgent(behavior="success") as agent:
+        adapter = HttpTargetAdapter(agent.endpoint)
+        adapter.execute(_request(_snapshot()))
+    body = agent.received_bodies[0]
+    assert body["input"] == {"skill": "test"}
+    assert body["turn_id"] == "t1"
+    assert agent.received_headers[0].get("x-agentgate-turn-id") == "t1"
+
+
+def test_http_adapter_keeps_multi_turn_envelope_on_wire():
+    with FakeHttpAgent(behavior="success") as agent:
+        adapter = HttpTargetAdapter(agent.endpoint)
+        request = _request(_snapshot()).model_copy(update={"input": freeze_json({
+            "turns": [
+                {"turn_id": "t1", "input": {"skill": "a"}},
+                {"turn_id": "t2", "input": {"skill": "b"}},
+            ],
+        })})
+        adapter.execute(request)
+    body = agent.received_bodies[0]
+    assert body["turn_id"] is None
+    assert [t["turn_id"] for t in body["input"]["turns"]] == ["t1", "t2"]
+
+
+def test_http_adapter_passes_flat_input_through_unchanged():
+    with FakeHttpAgent(behavior="success") as agent:
+        adapter = HttpTargetAdapter(agent.endpoint)
+        request = _request(_snapshot()).model_copy(update={
+            "input": freeze_json({"question": "hello"}),
+            "turn_id": "t9",
+        })
+        adapter.execute(request)
+    body = agent.received_bodies[0]
+    assert body["input"] == {"question": "hello"}
+    assert body["turn_id"] == "t9"
+    assert agent.received_headers[0].get("x-agentgate-turn-id") == "t9"
+
+
+def test_http_adapter_accepts_title_case_content_type():
+    """Header lookups must be case-insensitive (real agents send ``Content-Type``)."""
+    with FakeHttpAgent(behavior="success_title_case") as agent:
+        adapter = HttpTargetAdapter(agent.endpoint)
+        result = adapter.execute(_request(_snapshot()))
+    assert result.output == {"message": "processed", "status": "approved"}
+
+
 def test_http_adapter_401_maps_to_unauthorized():
     with FakeHttpAgent(behavior="401") as agent:
         adapter = HttpTargetAdapter(agent.endpoint)

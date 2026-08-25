@@ -62,6 +62,8 @@ def _make_handler(agent: FakeHttpAgent):
 
             if agent.behavior == "success":
                 self._handle_success(body)
+            elif agent.behavior == "success_title_case":
+                self._handle_success(body, header_name="Content-Type")
             elif agent.behavior == "slow":
                 import time
                 time.sleep(10)
@@ -85,7 +87,7 @@ def _make_handler(agent: FakeHttpAgent):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": agent.behavior}).encode())
 
-        def _handle_success(self, body: dict):
+        def _handle_success(self, body: dict, header_name: str = "content-type"):
             traceparent = self.headers.get("traceparent", "")
             trace_id = _extract_trace_id(traceparent)
             run_id = self.headers.get("x-agentgate-run-id", "")
@@ -103,7 +105,7 @@ def _make_handler(agent: FakeHttpAgent):
             }
             payload = json.dumps(response).encode()
             self.send_response(200)
-            self.send_header("content-type", "application/json")
+            self.send_header(header_name, "application/json")
             self.send_header("content-length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)

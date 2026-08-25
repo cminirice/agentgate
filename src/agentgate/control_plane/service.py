@@ -104,7 +104,7 @@ def _build_registry() -> dict[str, TargetRegistration]:
                 ),
                 invocation_config={
                     "endpoint": "http://localhost:8081/invoke",
-                    "timeout_seconds": 30.0,
+                    "timeout_seconds": 300.0,
                 },
                 credential_ref="AGENTGATE_LANGCHAIN_API_KEY",
             ),
