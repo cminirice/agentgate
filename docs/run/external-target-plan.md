@@ -4,6 +4,12 @@
 > Pre-refactor design record. Behavior and acceptance criteria remain useful, but file
 > paths and module ownership are superseded by
 > [the architecture review ledger](../architecture-review-ledger.md).
+>
+> Implementation note (2026-08-25): the current branch implements the Target domain
+> snapshot/request/result contracts, Python and HTTP adapters, W3C Trace Context,
+> pending correlation, and RunEngine Trace waiting. Catalog/discovery, process and
+> trace-only adapters, production credential management, retry/cancellation scheduling,
+> and external platform write-back remain deferred.
 
 
 ## Goal

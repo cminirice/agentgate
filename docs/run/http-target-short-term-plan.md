@@ -1,8 +1,13 @@
 # HTTP Target Adapter + OTel Trace Correlation — Short-Term Plan
 
-> Status: planned (not implemented). Modification level: **M** (new target domain
-> contract + new HTTP adapter + RunEngine refactor + OTel trace-correlation mechanism;
-> no Architecture Rule is changed).
+> Status: implemented and verified on `codex/trace-ingestion` (2026-08-25).
+> Modification level: **M** (new target domain contract + HTTP adapter + RunEngine
+> refactor + OTel trace-correlation mechanism; no Architecture Rule is changed).
+>
+> The implemented Trace module now exceeds this short-term plan's original minimum:
+> OTLP/HTTP JSON and protobuf, gzip, bounded normalization, merge/deduplication,
+> completeness, conflicts, and immutable revisions are available. OTLP/gRPC remains
+> deferred. See `docs/progress.md` and `docs/trace/ingestion-plan.md`.
 >
 > Design source: `docs/run/external-target-plan.md` (behavior and acceptance criteria
 > remain authoritative). This document scopes a short-term implementation subset and
@@ -77,7 +82,8 @@ external-target-plan §Scope lists 8 items. This increment's mapping:
   schema) — short-term Target only needs `ref` + endpoint + `credential_ref`.
 - Production credential vault — POC uses an environment-variable credential resolver.
 - Process adapter, trace-only adapter.
-- OTLP merge/deduplication/completeness lifecycle, protobuf, OTLP/gRPC — owned by
+- OTLP/gRPC remains outside this increment. OTLP/HTTP merge, deduplication,
+  completeness, and protobuf support have since been delivered by
   `docs/trace/ingestion-plan.md`.
 - Target CRUD/management Web screens. Target **selection** in the launch UI is in scope
   (§C); creating/editing/publishing targets from the Web is not.
@@ -111,21 +117,22 @@ external-target-plan §Scope lists 8 items. This increment's mapping:
 | Trace correlation assumes the target directly returns a canonical Trace | **Fix**: HTTP adapter returns `trace_id` correlation; OTLP arrives separately; RunEngine awaits. |
 | Demo provider and production target integration boundaries mixed | **Fix**: demo path goes through the same `TargetExecutionAdapter` contract (via `PythonFunctionTarget`); no special-case branch in RunEngine. |
 
-### Additional gaps discovered in the current source (not in external-target-plan list)
+### Additional gaps discovered before implementation (now resolved)
 
-- `trace/normalizer.py` keys traces by `agentgate.run_id`/`agentgate.case_id` span
-  attributes and defaults to `otlp-external`/`external-trace` when absent. A generic
+- The original `trace/normalizer.py` keyed traces by legacy correlation span attributes
+  and assigned placeholder identities when absent. A generic
   LangChain Agent (OpenInference instrumentation) does **not** stamp `agentgate.*`
   attributes, so correlation by span attributes fails. **Fix**: correlation-by-`trace_id`
-  pending-mapping resolver passed into the normalizer (§4, §8).
-- `trace/normalizer.py` maps span kind only via `agentgate.kind`; it does **not** recognize
+  pending-mapping resolver passed into the normalizer (§4, §8); unresolved spans are now
+  rejected rather than assigned placeholders.
+- The original normalizer mapped span kind only via `agentgate.kind`; it did not recognize
   OpenInference `openinference.span.kind` or OTel GenAI `gen_ai.*` attributes. LangChain
   spans would collapse to `SpanKind.EVENT`. **Fix**: add OpenInference/GenAI kind rules (§8).
-- `storage/base.py` has no pending-correlation surface; `trace/receivers/otlp_http.py`
-  saves traces directly from the normalizer with no `trace_id → run_id/case_id` lookup.
+- The original repository had no pending-correlation surface and the receiver had no
+  `trace_id → run_id/case_id` lookup.
   **Fix**: repository gains `put_pending_trace`/`get_pending_trace`; receiver builds a
   resolver and passes it to the normalizer (§4, §6, §9).
-- `control_plane/service.py` instantiates `LoanAgent(self.repository)` directly and passes
+- The original control-plane service instantiated `LoanAgent` directly and passed
   it to `engine.run` as a `Target` object + separate `version` string. **Fix**: unify on
   `TargetSnapshot` + `TargetExecutionAdapter` (§7).
 
@@ -164,11 +171,11 @@ external-target-plan §Scope lists 8 items. This increment's mapping:
    - run_id/case_id resolution priority:
        (a) agentgate.run_id / agentgate.case_id span attributes (if Agent cooperates)
        (b) pending mapping looked up by trace_id  (resolver built from repository)
-       (c) placeholder "otlp-external" / "external-trace"  (uncorrelated; logged as
-           warning and NOT attached to any real Run)
+       (c) reject the span when no valid correlation exists
    - kind resolution priority (§8): agentgate.kind > openinference.span.kind >
        gen_ai.* heuristic > EVENT default
-   - receiver save_trace(canonical Trace) keyed by resolved (run_id, case_id)
+   - receiver delegates the validated `TraceBatch` to the ingestion service, which
+     persists evidence and reconstructs the canonical Trace by `(run_id, case_id)`
 7. RunEngine awaits Trace:
    - if result.inline_trace is present (demo/python adapter): use directly, no wait.
    - else poll repository.get_trace(run_id, case_id) every poll_interval (POC 0.5s)
@@ -513,17 +520,19 @@ launch_target(snapshot, adapter, dataset_id, dataset_version, evaluator_ids,
 
 ### Current state
 
-- Groups spans by `(run_id, case_id, trace_id)` read from `agentgate.run_id` /
-  `agentgate.case_id` span attributes and the raw OTLP `traceId`.
-- Kind via `agentgate.kind`; default `SpanKind.EVENT`.
-- No OpenInference / OTel GenAI support; no `trace_id → run_id/case_id` fallback.
+- Produces a bounded `TraceBatch` rather than one Trace per request.
+- Resolves canonical dotted `agentgate.*` correlation, compatible legacy aliases, and
+  pending `trace_id → run_id/case_id/invocation_id` mappings.
+- Maps explicit AgentGate, OpenInference, and OTel `gen_ai.*` semantics to canonical
+  span kinds, with generic EVENT as the final fallback.
+- Rejects uncorrelated spans instead of assigning placeholder Run/Case identities.
 
-### Changes to add
+### Implemented changes
 
 1. **Kind resolution** with the priority in §4 Q4 (agentgate.kind > openinference.span.kind
    > gen_ai.* heuristic > EVENT). Mapping table in §4 Q4.
 2. **run_id/case_id resolution** with priority in §4 step 6 (agentgate.* span attrs >
-   pending mapping by `trace_id` > placeholder).
+   pending mapping by `trace_id` > strict rejection).
 3. New optional parameter:
    ```text
    correlation_resolver: Callable[[str], tuple[str, str] | None] | None = None
@@ -540,9 +549,9 @@ launch_target(snapshot, adapter, dataset_id, dataset_version, evaluator_ids,
 
 `ingest_otlp_http_json(payload, repository)` builds a resolver closure over
 `repository.get_pending_trace` and passes it to `normalize_otlp_json`. After
-normalization, `save_trace` each canonical Trace. Uncorrelated traces (placeholder
-`otlp-external`) are **not** attached to any real Run; they are counted in the response
-and logged as a warning (a future ingestion-plan owns the uncorrelated lifecycle).
+normalization, the Trace ingestion service validates and persists the accepted batch.
+Uncorrelated spans are rejected and reported through partial-success counters; no
+placeholder Trace is created.
 
 ## 9. File Change Map (trimmed from external-target-plan §Code Change Map)
 
@@ -867,8 +876,8 @@ Carried to later increments (mirrors external-target-plan §Deferred Work where 
   `POST /api/evaluations` + new `POST /api/evaluations/http`.
 - Target CRUD/management Web screens. Target **selection** in the launch UI is in scope
   (§C); creating/editing/publishing targets from the Web is not.
-- OTLP merge/deduplication/completeness lifecycle, protobuf, OTLP/gRPC —
-  `docs/trace/ingestion-plan.md`.
+- OTLP/gRPC. OTLP/HTTP merge, deduplication, completeness, and protobuf support are now
+  implemented under `docs/trace/ingestion-plan.md`.
 - Pending-mapping cleanup (TTL / run-completion sweep) — ingestion-plan scope; the POC
   table is non-destructive and will grow slowly.
 - The full instrumented Demo Agent HTTP service per `docs/run/demo-agent-plan.md` (a

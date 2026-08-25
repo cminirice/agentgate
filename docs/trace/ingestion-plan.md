@@ -4,6 +4,10 @@
 > Pre-refactor design record. Behavior and acceptance criteria remain useful, but file
 > paths and module ownership are superseded by
 > [the architecture review ledger](../architecture-review-ledger.md).
+>
+> Implementation status (2026-08-25): checkpoints 1–3 and the independently deliverable
+> parts of checkpoints 4–5 are implemented and verified on `codex/trace-ingestion`.
+> Remaining work is listed under **Deferred Work and Integration Gaps** below.
 
 
 ## Goal
@@ -44,38 +48,30 @@ Target execution
 This plan consumes the Run/Case/Turn/invocation correlation contract defined by
 `docs/run/external-target-plan.md`. It does not redefine target invocation.
 
-## Current State and Gap
+## Current Implementation State
 
-Implemented:
+Implemented and verified:
 
-- immutable canonical `Trace`, `TraceSpan`, and `TraceTurn` models;
-- routing, agent, tool, state, and generic event span kinds;
-- OTLP/HTTP JSON endpoint and receiver boundary;
-- basic OTLP AnyValue conversion;
-- normalization of OTLP resource/span attributes;
-- persistence and retrieval by Run and Case;
-- evaluator evidence referring to canonical span IDs;
-- basic receiver integration test.
+- OTLP/HTTP JSON and protobuf decoding, gzip support, request/decompressed/normalized
+  size limits, and partial rejection reporting;
+- preservation of OTel IDs, kind, status, scope, timestamps, attributes, events, links,
+  and dropped counts;
+- canonical dotted correlation attributes, compatible legacy aliases, pending
+  `trace_id` correlation for HTTP Targets, and strict rejection when Run/Case is absent;
+- `TraceBatch`, deterministic normalized span/signal identity and content hashes;
+- semantic signals for Trace/Turn completion and final output/state;
+- RunSnapshot Case and Turn validation, including single-turn inference and strict
+  multi-turn identity;
+- idempotent span/signal persistence, bounded conflicts, multi-batch/multi-source merge,
+  stable topology-aware ordering, and deterministic canonical IDs/hashes;
+- `TraceTurn` reconstruction, invocation aggregation, completeness policy, quiet period,
+  deadline expiration, incomplete/conflicted states, and immutable revisions;
+- late-arrival revision/reject policy and Results pinned to Trace revision/content hash;
+- `POST /v1/traces` ingestion and latest canonical Trace retrieval through
+  `GET /api/runs/{run_id}/traces/{case_id}`;
+- External Target execution-result enrichment before evaluation.
 
-Current gaps and risks:
-
-- absent correlation becomes `run_id="otlp-external"` and
-  `case_id="external-trace"` instead of being rejected or quarantined;
-- current attribute names use `agentgate.run_id` and `agentgate.case_id` while the target
-  plan defines canonical dotted names;
-- one OTLP request creates independent Trace objects grouped by source Trace ID;
-- SQLite enforces one row per Run/Case and `INSERT OR REPLACE` overwrites the prior batch;
-- duplicate OTLP delivery is not explicitly idempotent;
-- span conflicts are not detected;
-- span sequence is assigned from list position inside one received batch;
-- timestamps from OTLP are not parsed;
-- ordering changes when batches arrive in a different order;
-- canonical Trace identity is generated randomly;
-- final output, final state, turns, invocation attempts, and completeness are not derived;
-- late-arriving telemetry can replace data after evaluation;
-- there is no partial-success ingestion report;
-- OTLP importers and OTLP/gRPC are empty boundaries;
-- evaluators can receive an empty or incomplete Trace without an explicit policy.
+The full branch verification currently contains 169 passing Python tests.
 
 ## Scope
 
@@ -949,7 +945,7 @@ launch one external target Case
   -> restart service and reconstruct identical Trace
 ```
 
-## Deferred Work
+## Deferred Work and Integration Gaps
 
 - OTLP/gRPC receiver;
 - Jaeger and vendor-specific importers;
@@ -960,3 +956,11 @@ launch one external target Case
 - visual Trace graph redesign;
 - trace-based optimizer/root-cause implementation;
 - production metrics/alerts for ingestion SLOs.
+- production Invocation registry and external Target platform integration beyond the
+  current persisted pending-Trace correlation contract;
+- asynchronous RunEngine/background deadline scheduling (service/repository expiration
+  methods exist, but the Trace module does not start a worker);
+- automatic evaluator/rerun API driven specifically by late-arrival revisions;
+- public bounded conflict/debug HTTP endpoints (repository queries exist);
+- richer Target descriptors for Skill/tool metadata; canonical Trace currently retains
+  such values in span attributes rather than promoting them to top-level fields.
