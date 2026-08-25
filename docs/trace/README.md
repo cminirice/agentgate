@@ -1,11 +1,16 @@
 # Trace
 
-This module owns the canonical vendor-neutral Trace, OTLP/HTTP receivers, future
-importers, and normalization. Evaluators consume the canonical domain Trace rather than
-provider-specific telemetry payloads.
+The Trace core owns canonical semantic conversion and protection:
 
-Detailed plans:
+```text
+trace/
+├── normalizer.py
+└── redaction.py
+```
 
-- [Canonical Trace ingestion](ingestion-plan.md): correlation, multi-batch merge,
-  deduplication, deterministic ordering, completeness, late arrivals, persistence, and
-  OTLP/HTTP behavior.
+OTLP transport and vendor-specific trace retrieval belong in
+`integrations/observability/`. Domain Trace models and invariants belong in `domain/`;
+persistence belongs in `storage/`.
+
+The [ingestion plan](ingestion-plan.md) retains useful correlation, merge, completeness,
+and acceptance design, but its pre-refactor ownership and file map are not authoritative.

@@ -1,5 +1,10 @@
 # AgentGate Demo Setup and Test Guide
 
+> [!NOTE]
+> Historical `goal/p1-demo` record. Package paths here are not authoritative for
+> `refactor-1`; see [the architecture review ledger](../../architecture-review-ledger.md).
+
+
 ## Purpose
 
 This guide exercises the working P1 demo through real SQLite persistence and real API
