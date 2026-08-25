@@ -8,7 +8,13 @@ from typing import Any
 from pydantic import Field, field_serializer, field_validator, model_validator
 
 from agentgate.domain import (
-    DomainModel, FailureStage, JudgeEvidence, MethodRef, Outcome, Result, freeze_json,
+    DomainModel,
+    FailureStage,
+    JudgeEvidence,
+    MethodRef,
+    Outcome,
+    Result,
+    freeze_json,
 )
 
 
@@ -18,7 +24,7 @@ class FailureCandidate(DomainModel):
     at_trace_completion: bool = False
 
     @model_validator(mode="after")
-    def validate_location(self) -> "FailureCandidate":
+    def validate_location(self) -> FailureCandidate:
         if self.span_id is None and not self.at_trace_completion:
             raise ValueError("failure candidate requires span_id or trace-completion marker")
         if self.span_id is not None and self.at_trace_completion:

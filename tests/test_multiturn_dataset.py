@@ -1,7 +1,12 @@
 from agentgate.case import DatasetService
 from agentgate.control_plane import EvaluationService
 from agentgate.domain import (
-    Case, CaseTurn, Equals, MatchesPattern, OutputExpectation, StateExpectation,
+    Case,
+    CaseTurn,
+    Equals,
+    MatchesPattern,
+    OutputExpectation,
+    StateExpectation,
 )
 from agentgate.storage.sqlite import SQLiteRepository
 

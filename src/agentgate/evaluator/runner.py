@@ -10,7 +10,9 @@ from agentgate.domain import Case, EvaluationErrorEvidence, EvaluatorSpec, Outco
 
 from .calc_score import calculate_result
 from .models import (
-    CircularEvaluatorDependency, DuplicateEvaluatorId, Evaluation,
+    CircularEvaluatorDependency,
+    DuplicateEvaluatorId,
+    Evaluation,
     MissingEvaluatorDependency,
 )
 from .registry import resolve_evaluator
@@ -93,7 +95,7 @@ def evaluate_case(
                 judge_evidence = turn_evaluation.judge_evidence or judge_evidence
             evaluation = Evaluation(checks=tuple(checks), judge_evidence=judge_evidence)
             result = calculate_result(spec, trace.run_id, case.id, trace, evaluation)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - evaluator errors are unpredictable
             result = _error_result(spec, case, trace, exc)
         finally:
             resolving.discard(spec_id)

@@ -3,9 +3,19 @@ import sqlite3
 
 import pytest
 
-from agentgate.domain import Case, CaseTurn, GateSpec, MetricPlan, Run, RunSnapshot, TargetSnapshot
-from agentgate.domain.base import content_sha256
 from agentgate.demo.loan import LOAN_DATASET_VERSION
+from agentgate.domain import (
+    Case,
+    CaseTurn,
+    GateSpec,
+    MetricPlan,
+    Run,
+    RunSnapshot,
+    TargetRef,
+    TargetSnapshot,
+    TargetType,
+)
+from agentgate.domain.base import content_sha256
 from agentgate.evaluator import EVALUATORS
 from agentgate.storage.sqlite import SQLiteRepository
 
@@ -13,7 +23,15 @@ from agentgate.storage.sqlite import SQLiteRepository
 def snapshot():
     return RunSnapshot(
         dataset=LOAN_DATASET_VERSION,
-        target=TargetSnapshot(name="loan", version="v1", provider="deterministic"),
+        target=TargetSnapshot(
+            ref=TargetRef(
+                platform_id="demo", target_type=TargetType.AGENT,
+                external_target_id="loan", external_version_id="v1",
+            ),
+            display_name="loan",
+            adapter_type="python_fn",
+            adapter_version="1",
+        ),
         evaluator_specs=EVALUATORS,
         primary_evaluator_ids=tuple(item.id for item in EVALUATORS),
         metric_plan=MetricPlan(),
@@ -47,7 +65,7 @@ def test_repository_rejects_tampered_snapshot(tmp_path):
         payload = json.loads(db.execute(
             "SELECT payload FROM runs WHERE id=?", (run.id,)
         ).fetchone()[0])
-        payload["snapshot"]["target"]["version"] = "tampered"
+        payload["snapshot"]["target"]["ref"]["external_version_id"] = "tampered"
         db.execute("UPDATE runs SET payload=? WHERE id=?", (json.dumps(payload), run.id))
     with pytest.raises(ValueError, match="hash mismatch"):
         repository.get_run(run.id)

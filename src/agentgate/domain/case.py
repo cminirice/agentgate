@@ -103,7 +103,7 @@ class DatasetVersion(DomainModel):
     content_sha256: str = ""
 
     @model_validator(mode="after")
-    def validate_version_and_hash(self) -> "DatasetVersion":
+    def validate_version_and_hash(self) -> DatasetVersion:
         if self.status == DatasetVersionStatus.PUBLISHED:
             if self.version is None or self.published_at is None:
                 raise ValueError("published DatasetVersion requires version and published_at")

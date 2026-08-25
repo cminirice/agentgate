@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from agentgate.domain import (
-    CheckResult, Evidence, EvaluatorSpec, FailureObservation, MethodRef, Outcome, Result, Trace,
+    CheckResult,
+    EvaluatorSpec,
+    Evidence,
+    FailureObservation,
+    MethodRef,
+    Outcome,
+    Result,
+    Trace,
 )
 
 from .models import CheckDraft, Evaluation

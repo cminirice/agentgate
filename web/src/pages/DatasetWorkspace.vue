@@ -398,7 +398,7 @@ onMounted(async () => {
         <span v-else>草稿不能运行，请先验证并发布。</span>
       </div>
       <el-select v-model="selectedAgent" data-testid="dataset-agent-select" aria-label="运行 Agent 版本">
-        <el-option v-for="item in targetVersions" :key="item.id" :label="item.label" :value="item.id" />
+        <el-option v-for="item in targetVersions" :key="item.id" :label="`${item.label} · ${item.adapter_type === 'http' ? 'HTTP' : 'Demo'}`" :value="item.id" />
       </el-select>
       <el-select v-model="selectedEvaluators" multiple collapse-tags aria-label="运行评估器">
         <el-option v-for="item in evaluators" :key="item.id" :label="item.name" :value="item.id" />

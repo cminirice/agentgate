@@ -3,8 +3,14 @@ from datetime import UTC, datetime
 import pytest
 
 from agentgate.domain import (
-    Case, CaseTurn, DatasetVersion, DatasetVersionStatus, Dimension, MatchesJsonSchema,
-    RuleEvaluatorSpec, StateExpectation,
+    Case,
+    CaseTurn,
+    DatasetVersion,
+    DatasetVersionStatus,
+    Dimension,
+    MatchesJsonSchema,
+    RuleEvaluatorSpec,
+    StateExpectation,
 )
 from agentgate.evaluator import EVALUATORS, validate_evaluation_plan
 

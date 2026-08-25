@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 
 from agentgate.case import DatasetExport, DatasetValidationError
 from agentgate.control_plane import EvaluationService
-from agentgate.domain import Case, DatasetPurpose
+from agentgate.domain import Case, DatasetPurpose, TargetRef, TargetType
+from agentgate.run.targets.base import TargetIntegrationError
 from agentgate.storage.sqlite import SQLiteRepository
 from agentgate.trace.receivers.otlp_http import ingest_otlp_http_json
 
@@ -20,6 +21,18 @@ class LaunchRequest(BaseModel):
     dataset_id: str
     dataset_version: int = Field(ge=1)
     evaluator_ids: list[str] | None = None
+
+
+class LaunchHttpRequest(BaseModel):
+    endpoint: str
+    target_id: str
+    version_id: str
+    credential_ref: str = ""
+    platform_id: str = "external"
+    dataset_id: str = "loan-risk-policy"
+    dataset_version: int = Field(default=1, ge=1)
+    evaluator_ids: list[str] | None = None
+    timeout_seconds: float = Field(default=30.0, gt=0)
 
 
 class RerunCaseRequest(BaseModel):
@@ -258,7 +271,27 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 request.dataset_version,
                 request.evaluator_ids,
             )
-        except ValueError as exc:
+        except (ValueError, TargetIntegrationError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @api.post("/evaluations/http", status_code=201)
+    def launch_http(request: LaunchHttpRequest):
+        try:
+            return service.launch_http(
+                TargetRef(
+                    platform_id=request.platform_id,
+                    target_type=TargetType.AGENT,
+                    external_target_id=request.target_id,
+                    external_version_id=request.version_id,
+                ),
+                endpoint=request.endpoint,
+                credential_ref=request.credential_ref or None,
+                dataset_id=request.dataset_id,
+                dataset_version=request.dataset_version,
+                evaluator_ids=request.evaluator_ids,
+                timeout_seconds=request.timeout_seconds,
+            )
+        except (ValueError, TargetIntegrationError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @api.get("/runs/{run_id}")
@@ -274,7 +307,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             return service.rerun_case(run_id, case_id, request.target_version)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except ValueError as exc:
+        except (ValueError, TargetIntegrationError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @api.get("/runs/{run_id}/comparison")

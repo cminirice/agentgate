@@ -5,8 +5,15 @@ from types import SimpleNamespace
 from jsonschema import Draft202012Validator
 
 from agentgate.domain import (
-    Case, CaseTurn, Dimension, MatchesJsonSchema, Outcome, OutputExpectation,
-    RuleEvaluatorSpec, Trace, TraceTurn,
+    Case,
+    CaseTurn,
+    Dimension,
+    MatchesJsonSchema,
+    Outcome,
+    OutputExpectation,
+    RuleEvaluatorSpec,
+    Trace,
+    TraceTurn,
 )
 from agentgate.domain.base import FrozenJsonObject
 from agentgate.evaluator import evaluate_case

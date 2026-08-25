@@ -4,7 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from agentgate.domain import (
-    Case, CaseCategory, CaseDifficulty, CaseTurn, DatasetVersion,
+    Case,
+    CaseCategory,
+    CaseDifficulty,
+    CaseTurn,
+    DatasetVersion,
     DatasetVersionStatus,
 )
 
