@@ -71,6 +71,7 @@ class MustBeMissing(DomainModel):
 class MatchesJsonSchema(DomainModel):
     kind: Literal["matches_json_schema"] = "matches_json_schema"
     json_schema: FrozenJsonObject
+    instance_mode: Literal["structured", "json_text"] = "structured"
 
 
 Condition = Annotated[
