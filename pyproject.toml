@@ -19,6 +19,7 @@ dependencies = [
   "fastapi>=0.110",
   "uvicorn>=0.29",
   "opentelemetry-proto>=1.27",
+  "jsonschema>=4.20",
 ]
 
 [project.optional-dependencies]

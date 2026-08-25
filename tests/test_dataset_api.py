@@ -1,7 +1,12 @@
 from fastapi.testclient import TestClient
 
 from agentgate.domain import (
-    Case, CaseCategory, CaseDifficulty, CaseTurn, Equals, OutputExpectation,
+    Case,
+    CaseCategory,
+    CaseDifficulty,
+    CaseTurn,
+    Equals,
+    OutputExpectation,
     StateExpectation,
 )
 from agentgate.server.application import create_app

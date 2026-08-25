@@ -1,33 +1,35 @@
-# Documentation Index
+# AgentGate Documentation
 
-Top-level documents describe the whole AgentGate project. Detailed design decisions,
-working notes, and implementation plans live under the module that owns them.
+## Current Authority
 
-## Project-wide documents
+- [Product requirements](product-requirements-zh.md) define the intended product behavior.
+- [Architecture review ledger](architecture-review-ledger.md) is the authoritative
+  `refactor-1` structure while Level 2 and Level 3 review is in progress.
+- Running code and automated tests describe the inherited `goal/p1-demo` baseline; they
+  do not override confirmed refactor decisions in the ledger.
 
-- [Product requirements](product-requirements-zh.md)
-- [Implementation roadmap](implementation-roadmap.md)
-- [Demo setup and test guide](demo-test-guide.md)
-- [System architecture](arch.md)
-- [Capability mapping](capability-mapping.md)
-- [Verified progress](progress.md)
+The consolidated `arch.md`, implementation roadmap, and capability mapping will be
+regenerated after the architecture review is complete.
 
-## Module documents
+## Current Module Documents
 
-| Module | Documentation | Current source | Responsibility |
-| --- | --- | --- | --- |
-| Dataset and Case | [dataset/](dataset/) | `src/agentgate/case/`, `domain/case.py` | Dataset versions, Cases, import/export, and editing |
-| Evaluator | [evaluator/](evaluator/) | `src/agentgate/evaluator/` | Rule, LLM Judge, Hybrid, operators, and execution |
-| Static analysis | [analysis/](analysis/) | Planned | Skill conflict, confusion, and Prompt alignment |
-| Run | [run/](run/) | `src/agentgate/run/` | Run snapshots and target execution |
-| Trace | [trace/](trace/) | `src/agentgate/trace/` | Canonical traces and telemetry ingestion |
-| Result | [result/](result/) | `src/agentgate/result/` | Scores, metrics, reports, and release gates |
-| Control plane | [control-plane/design.md](control-plane/design.md) | `src/agentgate/control_plane/`, `queue/`, `server/` | Job ownership, queue and scheduler boundaries, and external execution integration |
-| Control panel | [control-panel/](control-panel/) | `web/` | Web UI and application workflows |
+| Capability | Documentation | Responsibility |
+| --- | --- | --- |
+| Dataset and Case | [dataset/](dataset/) | Reusable loading, formats, versioning, sampling, and generation mechanics |
+| Evaluator | [evaluator/](evaluator/) | Rule, LLM Judge, Hybrid, and evaluator execution |
+| Static analysis | [analysis/](analysis/) | Agent/Skill definition conflict, confusion, and Prompt alignment analysis |
+| Run | [run/](run/) | Run manifests, execution engine, process management, retry, and artifacts |
+| Trace | [trace/](trace/) | Canonical Trace normalization and redaction |
+| Result | [result/](result/) | Metrics, gates, reports, and Run comparison |
+| Control panel | [control-panel/](control-panel/) | Vue Web UI and user workflows |
 
-## Documentation rule
+Cross-capability orchestration belongs in `application/`. External systems are connected
+through `integrations/`. Persistence implementations belong in `storage/`.
 
-- Keep cross-module architecture and product requirements at the docs root.
-- Put a module's terminology, decisions, and implementation plan in its folder.
-- Record verified project-wide status in progress.md, not in multiple module plans.
-- Treat plans as design records; running code and automated tests remain authoritative.
+## Plan Status
+
+Detailed implementation plans that carry a pre-refactor warning retain useful behavior,
+contracts, and acceptance criteria, but their file maps are not authoritative. Update
+them against the ledger before implementation.
+
+Historical P1 and earlier planning records are under [history/](history/).

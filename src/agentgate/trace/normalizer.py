@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import re
+from collections.abc import Callable
 from typing import Any
 
 from agentgate.domain import SpanKind, canonical_json, content_sha256
@@ -19,6 +20,26 @@ _ALIASES = {
     "agentgate.turn.id": ("turn_id",),
     "agentgate.span.kind": ("agentgate.kind",),
 }
+_OPENINFERENCE_KIND_MAP = {
+    "LLM": SpanKind.AGENT, "AGENT": SpanKind.AGENT, "CHAIN": SpanKind.AGENT,
+    "TOOL": SpanKind.TOOL, "RETRIEVER": SpanKind.TOOL,
+    "GUARDRAIL": SpanKind.EVENT, "EMBEDDING": SpanKind.EVENT,
+    "RERANKER": SpanKind.EVENT,
+}
+
+
+def _resolve_kind(span_attrs: dict[str, Any]) -> SpanKind:
+    explicit = span_attrs.get("agentgate.span.kind")
+    if isinstance(explicit, str) and explicit in SpanKind._value2member_map_:
+        return SpanKind(explicit)
+    oi_kind = span_attrs.get("openinference.span.kind")
+    if isinstance(oi_kind, str) and oi_kind.upper() in _OPENINFERENCE_KIND_MAP:
+        return _OPENINFERENCE_KIND_MAP[oi_kind.upper()]
+    if span_attrs.get("gen_ai.system") is not None:
+        return SpanKind.AGENT
+    if span_attrs.get("gen_ai.tool.name") is not None or span_attrs.get("tool.name") is not None:
+        return SpanKind.TOOL
+    return SpanKind.EVENT
 
 
 def otlp_value(
@@ -141,7 +162,10 @@ def _link(raw: dict[str, Any], limits: OtlpIngestionLimits) -> dict[str, Any]:
 
 
 def normalize_otlp_json(
-    payload: dict[str, Any], limits: OtlpIngestionLimits | None = None
+    payload: dict[str, Any], limits: OtlpIngestionLimits | None = None, *,
+    correlation_resolver: Callable[
+        [str], tuple[str, str] | tuple[str, str, str] | None
+    ] | None = None,
 ) -> TraceBatch:
     limits = limits or OtlpIngestionLimits()
     if not isinstance(payload, dict):
@@ -182,8 +206,6 @@ def normalize_otlp_json(
                         **attributes(raw.get("attributes", []), limits),
                     }
                     span_attrs = _canonicalize(raw_attrs)
-                    run_id = _required_string(span_attrs, "agentgate.run.id")
-                    case_id = _required_string(span_attrs, "agentgate.case.id")
                     trace_id = str(raw.get("traceId", "")).lower()
                     span_id = str(raw.get("spanId", "")).lower()
                     parent_id = str(raw.get("parentSpanId", "")).lower() or None
@@ -193,6 +215,21 @@ def normalize_otlp_json(
                         raise ValueError("spanId must be 16 hexadecimal characters")
                     if parent_id is not None and not _SPAN_ID.fullmatch(parent_id):
                         raise ValueError("parentSpanId must be 16 hexadecimal characters")
+                    resolved = (
+                        correlation_resolver(trace_id)
+                        if correlation_resolver is not None else None
+                    )
+                    if (
+                        ("agentgate.run.id" not in span_attrs
+                         or "agentgate.case.id" not in span_attrs)
+                        and resolved is not None
+                    ):
+                        span_attrs["agentgate.run.id"] = resolved[0]
+                        span_attrs["agentgate.case.id"] = resolved[1]
+                        if len(resolved) == 3:
+                            span_attrs.setdefault("agentgate.invocation.id", resolved[2])
+                    run_id = _required_string(span_attrs, "agentgate.run.id")
+                    case_id = _required_string(span_attrs, "agentgate.case.id")
                     start = _timestamp(raw, "startTimeUnixNano")
                     end = _timestamp(raw, "endTimeUnixNano")
                     if start is not None and end is not None and end < start:
@@ -201,8 +238,7 @@ def normalize_otlp_json(
                     raw_links = raw.get("links", [])
                     if len(raw_events) > limits.max_events or len(raw_links) > limits.max_links:
                         raise ValueError("span events or links exceed configured limit")
-                    kind_value = str(span_attrs.get("agentgate.span.kind", "event"))
-                    kind = SpanKind(kind_value) if kind_value in SpanKind._value2member_map_ else SpanKind.EVENT
+                    kind = _resolve_kind(span_attrs)
                     attempt_raw = span_attrs.get("agentgate.invocation.attempt", 0)
                     if isinstance(attempt_raw, bool):
                         raise ValueError("invocation attempt must be an integer")

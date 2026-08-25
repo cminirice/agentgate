@@ -6,7 +6,7 @@ from agentgate.storage.sqlite import SQLiteRepository
 def test_create_edit_publish_and_preserve_old_version(tmp_path):
     service = DatasetService(SQLiteRepository(tmp_path / "datasets.db"))
     dataset = service.create_dataset("My Dataset", "demo")
-    draft = service.create_draft(dataset.id)
+    service.create_draft(dataset.id)
     case = Case(
         id="case-1", name="Case 1",
         turns=(CaseTurn(id="turn-1", input={"message": "hello"}),),

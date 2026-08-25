@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 
 from agentgate.case import DatasetExport, DatasetValidationError
 from agentgate.control_plane import EvaluationService
-from agentgate.domain import Case
+from agentgate.domain import Case, DatasetPurpose, TargetRef, TargetType
+from agentgate.run.targets.base import TargetIntegrationError
 from agentgate.storage.sqlite import SQLiteRepository
 from agentgate.trace.receivers.otlp_http import (
     decode_content_encoding, encode_otlp_http_protobuf_response,
@@ -26,9 +27,33 @@ class LaunchRequest(BaseModel):
     evaluator_ids: list[str] | None = None
 
 
+class LaunchHttpRequest(BaseModel):
+    endpoint: str
+    target_id: str
+    version_id: str
+    credential_ref: str = ""
+    platform_id: str = "external"
+    dataset_id: str = "loan-risk-policy"
+    dataset_version: int = Field(default=1, ge=1)
+    evaluator_ids: list[str] | None = None
+    timeout_seconds: float = Field(default=30.0, gt=0)
+
+
+class RerunCaseRequest(BaseModel):
+    target_version: str | None = None
+
+
 class CreateDatasetRequest(BaseModel):
     name: str
     description: str = ""
+    purpose: DatasetPurpose = DatasetPurpose.STANDARD
+
+
+class AddRegressionCaseRequest(BaseModel):
+    regression_dataset_id: str | None = None
+    new_dataset_name: str | None = None
+    new_dataset_description: str = ""
+    reason: str = ""
 
 
 class UpdateDatasetRequest(BaseModel):
@@ -89,7 +114,9 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @api.post("/datasets", status_code=201)
     def create_dataset(request: CreateDatasetRequest):
         try:
-            dataset = datasets.create_dataset(request.name, request.description)
+            dataset = datasets.create_dataset(
+                request.name, request.description, request.purpose,
+            )
             draft = datasets.create_draft(dataset.id)
             return {"dataset": dataset, "draft": draft}
         except ValueError as exc:
@@ -248,7 +275,27 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 request.dataset_version,
                 request.evaluator_ids,
             )
-        except ValueError as exc:
+        except (ValueError, TargetIntegrationError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @api.post("/evaluations/http", status_code=201)
+    def launch_http(request: LaunchHttpRequest):
+        try:
+            return service.launch_http(
+                TargetRef(
+                    platform_id=request.platform_id,
+                    target_type=TargetType.AGENT,
+                    external_target_id=request.target_id,
+                    external_version_id=request.version_id,
+                ),
+                endpoint=request.endpoint,
+                credential_ref=request.credential_ref or None,
+                dataset_id=request.dataset_id,
+                dataset_version=request.dataset_version,
+                evaluator_ids=request.evaluator_ids,
+                timeout_seconds=request.timeout_seconds,
+            )
+        except (ValueError, TargetIntegrationError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @api.get("/runs/{run_id}")
@@ -257,6 +304,43 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         if report is None:
             raise HTTPException(status_code=404, detail="run not found")
         return report
+
+    @api.post("/runs/{run_id}/cases/{case_id}/rerun", status_code=201)
+    def rerun_case(run_id: str, case_id: str, request: RerunCaseRequest):
+        try:
+            return service.rerun_case(run_id, case_id, request.target_version)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (ValueError, TargetIntegrationError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @api.get("/runs/{run_id}/comparison")
+    def rerun_comparison(run_id: str):
+        try:
+            return service.rerun_comparison(run_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @api.post("/runs/{run_id}/cases/{case_id}/regression", status_code=201)
+    def add_case_to_regression_dataset(
+        run_id: str, case_id: str, request: AddRegressionCaseRequest,
+    ):
+        try:
+            dataset, draft, copied = service.add_case_to_regression_dataset(
+                run_id=run_id,
+                case_id=case_id,
+                regression_dataset_id=request.regression_dataset_id,
+                new_dataset_name=request.new_dataset_name,
+                new_dataset_description=request.new_dataset_description,
+                reason=request.reason,
+            )
+            return {"dataset": dataset, "draft": draft, "case": copied}
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @api.get("/runs/{run_id}/traces/{case_id}")
     def trace_detail(run_id: str, case_id: str):

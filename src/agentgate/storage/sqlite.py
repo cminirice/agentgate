@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -15,6 +15,7 @@ from agentgate.trace.models import (
     IngestionReport, NormalizedSignal, NormalizedSpan, TraceBatch,
 )
 from agentgate.trace.service import TraceIngestionService
+from agentgate.storage.base import PendingTraceCorrelation
 
 
 class SQLiteRepository:
@@ -96,6 +97,15 @@ class SQLiteRepository:
                 );
                 CREATE INDEX IF NOT EXISTS idx_traces_run ON traces(run_id);
                 CREATE INDEX IF NOT EXISTS idx_results_run ON results(run_id);
+                CREATE TABLE IF NOT EXISTS pending_trace_correlation (
+                    trace_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    invocation_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_pending_run
+                    ON pending_trace_correlation(run_id);
                 CREATE TABLE IF NOT EXISTS trace_batches (
                     id TEXT PRIMARY KEY, content_sha256 TEXT NOT NULL UNIQUE,
                     source TEXT NOT NULL, received_at TEXT NOT NULL,
@@ -164,6 +174,36 @@ class SQLiteRepository:
                 (
                     dataset.id, dataset.name, int(dataset.archived),
                     dataset.updated_at.isoformat(), self._json(dataset),
+                ),
+            )
+
+    def save_dataset_with_draft(
+        self, dataset: Dataset, draft: DatasetVersion
+    ) -> None:
+        if draft.dataset_id != dataset.id:
+            raise ValueError("draft must belong to Dataset")
+        if draft.status != DatasetVersionStatus.DRAFT:
+            raise ValueError("initial DatasetVersion must be a draft")
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT INTO datasets(id,name,archived,updated_at,payload)
+                VALUES(?,?,?,?,?)
+                """,
+                (
+                    dataset.id, dataset.name, int(dataset.archived),
+                    dataset.updated_at.isoformat(), self._json(dataset),
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO dataset_versions(
+                    id,dataset_id,version,status,created_at,content_sha256,payload
+                ) VALUES(?,?,?,?,?,?,?)
+                """,
+                (
+                    draft.id, draft.dataset_id, draft.version, draft.status.value,
+                    draft.created_at.isoformat(), draft.content_sha256, self._json(draft),
                 ),
             )
 
@@ -770,3 +810,26 @@ class SQLiteRepository:
                 "SELECT payload FROM business_state WHERE namespace=? AND key=?", (namespace, key)
             ).fetchone()
         return json.loads(row[0]) if row else None
+
+    def put_pending_trace(
+        self, run_id: str, case_id: str, invocation_id: str, trace_id: str
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT OR REPLACE INTO pending_trace_correlation(
+                   trace_id,run_id,case_id,invocation_id,created_at) VALUES(?,?,?,?,?)""",
+                (trace_id, run_id, case_id, invocation_id, datetime.now(UTC).isoformat()),
+            )
+
+    def get_pending_trace(self, trace_id: str) -> PendingTraceCorrelation | None:
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT trace_id,run_id,case_id,invocation_id,created_at
+                   FROM pending_trace_correlation WHERE trace_id=?""",
+                (trace_id,),
+            ).fetchone()
+        return PendingTraceCorrelation(
+            run_id=row["run_id"], case_id=row["case_id"],
+            invocation_id=row["invocation_id"], trace_id=row["trace_id"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        ) if row else None

@@ -165,9 +165,9 @@ class TraceIngestionService:
                     )
                 continue
             target_expectations = {
-                "agentgate.target.type": _run.snapshot.target.provider,
-                "agentgate.target.id": _run.snapshot.target.name,
-                "agentgate.target.version": _run.snapshot.target.version,
+                "agentgate.target.type": _run.snapshot.target.ref.target_type.value,
+                "agentgate.target.id": _run.snapshot.target.ref.external_target_id,
+                "agentgate.target.version": _run.snapshot.target.ref.external_version_id,
             }
             mismatch = next((
                 key for key, expected in target_expectations.items()

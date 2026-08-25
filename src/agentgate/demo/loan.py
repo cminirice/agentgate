@@ -4,14 +4,24 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from agentgate.domain import (
-    Case, CaseCategory, CaseDifficulty, CaseTurn, Dataset, DatasetVersion,
-    DatasetVersionStatus, Equals, SpanKind, StateExpectation, ToolArgumentExpectation,
-    Trace, TraceSpan, TraceTurn,
-)
 from agentgate.demo.provider import AgentProvider, DeterministicProvider
+from agentgate.domain import (
+    Case,
+    CaseCategory,
+    CaseDifficulty,
+    CaseTurn,
+    Dataset,
+    DatasetVersion,
+    DatasetVersionStatus,
+    Equals,
+    SpanKind,
+    StateExpectation,
+    ToolArgumentExpectation,
+    Trace,
+    TraceSpan,
+    TraceTurn,
+)
 from agentgate.storage.base import AgentGateRepository
-
 
 DEMO_CREATED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 

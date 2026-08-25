@@ -1,5 +1,11 @@
 from agentgate.domain import (
-    Case, CaseTurn, Dimension, Kind, Outcome, RuleEvaluatorSpec, Trace,
+    Case,
+    CaseTurn,
+    Dimension,
+    Kind,
+    Outcome,
+    RuleEvaluatorSpec,
+    Trace,
 )
 from agentgate.evaluator.base import Evaluator
 from agentgate.evaluator.models import Evaluation

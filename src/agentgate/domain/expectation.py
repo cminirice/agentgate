@@ -33,7 +33,7 @@ class WithinRange(DomainModel):
     maximum: float | None = None
 
     @model_validator(mode="after")
-    def validate_bounds(self) -> "WithinRange":
+    def validate_bounds(self) -> WithinRange:
         if self.minimum is None and self.maximum is None:
             raise ValueError("within_range requires minimum or maximum")
         if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
@@ -46,7 +46,7 @@ class MatchesPattern(DomainModel):
     pattern: str
 
     @model_validator(mode="after")
-    def validate_pattern(self) -> "MatchesPattern":
+    def validate_pattern(self) -> MatchesPattern:
         try:
             re.compile(self.pattern)
         except re.error as exc:
@@ -71,6 +71,7 @@ class MustBeMissing(DomainModel):
 class MatchesJsonSchema(DomainModel):
     kind: Literal["matches_json_schema"] = "matches_json_schema"
     json_schema: FrozenJsonObject
+    instance_mode: Literal["structured", "json_text"] = "structured"
 
 
 Condition = Annotated[

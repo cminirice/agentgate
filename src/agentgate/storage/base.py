@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
@@ -9,8 +10,20 @@ from agentgate.domain import Dataset, DatasetVersion, Result, Run, Trace
 from agentgate.trace.models import IngestionReport, TraceBatch
 
 
+@dataclass(frozen=True)
+class PendingTraceCorrelation:
+    run_id: str
+    case_id: str
+    invocation_id: str
+    trace_id: str
+    created_at: datetime
+
+
 class AgentGateRepository(Protocol):
     def save_dataset(self, dataset: Dataset) -> None: ...
+    def save_dataset_with_draft(
+        self, dataset: Dataset, draft: DatasetVersion
+    ) -> None: ...
     def get_dataset(self, dataset_id: str) -> Dataset | None: ...
     def list_datasets(self, include_archived: bool = False) -> list[Dataset]: ...
     def save_dataset_version(self, version: DatasetVersion) -> None: ...
@@ -46,3 +59,7 @@ class AgentGateRepository(Protocol):
     def list_results(self, run_id: str) -> list[Result]: ...
     def put_business_state(self, namespace: str, key: str, value: dict) -> None: ...
     def get_business_state(self, namespace: str, key: str) -> dict | None: ...
+    def put_pending_trace(
+        self, run_id: str, case_id: str, invocation_id: str, trace_id: str
+    ) -> None: ...
+    def get_pending_trace(self, trace_id: str) -> PendingTraceCorrelation | None: ...

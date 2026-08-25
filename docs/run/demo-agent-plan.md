@@ -1,5 +1,11 @@
 # Instrumented Demo Agent Plan
 
+> [!IMPORTANT]
+> Pre-refactor design record. Behavior and acceptance criteria remain useful, but file
+> paths and module ownership are superseded by
+> [the architecture review ledger](../architecture-review-ledger.md).
+
+
 ## Goal
 
 Provide a deterministic loan-domain Agent that is invoked through HTTP, records its real

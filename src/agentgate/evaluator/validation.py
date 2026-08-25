@@ -2,16 +2,62 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from agentgate.domain import (
-    DatasetVersion, HybridEvaluatorSpec, Kind, MatchesJsonSchema, RuleEvaluatorSpec,
+    DatasetVersion,
+    HybridEvaluatorSpec,
+    Kind,
+    MatchesJsonSchema,
+    RuleEvaluatorSpec,
 )
 
 from .models import (
-    DuplicateEvaluatorId, EvaluatorVersionMismatch, InvalidHybridEvaluator,
-    MissingEvaluatorDependency, UnsupportedOperator,
+    DuplicateEvaluatorId,
+    EvaluatorVersionMismatch,
+    InvalidHybridEvaluator,
+    MissingEvaluatorDependency,
 )
 from .observations import condition_operator
 from .registry import resolve_evaluator, resolve_operator
+
+_SUPPORTED_DRAFT_MARKER = "2020-12"
+_REMOTE_REF_PREFIXES = ("http://", "https://", "file://")
+
+
+def _find_remote_ref(schema: Any) -> str | None:
+    if isinstance(schema, dict):
+        for key in ("$ref", "$dynamicRef"):
+            ref = schema.get(key)
+            if isinstance(ref, str) and ref.startswith(_REMOTE_REF_PREFIXES):
+                return ref
+        for value in schema.values():
+            found = _find_remote_ref(value)
+            if found is not None:
+                return found
+    elif isinstance(schema, list):
+        for item in schema:
+            found = _find_remote_ref(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _validate_json_schema_condition(condition: MatchesJsonSchema) -> None:
+    schema = condition.json_schema.to_dict()
+    declared = schema.get("$schema")
+    if isinstance(declared, str) and _SUPPORTED_DRAFT_MARKER not in declared:
+        raise ValueError(f"unsupported JSON Schema draft: {declared}")
+    remote_ref = _find_remote_ref(schema)
+    if remote_ref is not None:
+        raise ValueError(f"remote $ref is not supported: {remote_ref}")
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as exc:
+        raise ValueError(f"invalid JSON Schema: {exc.message}") from exc
 
 
 def validate_evaluation_plan(dataset: DatasetVersion, evaluators: tuple) -> None:
@@ -48,5 +94,5 @@ def validate_evaluation_plan(dataset: DatasetVersion, evaluators: tuple) -> None
         for turn in case.turns:
             for expectation in turn.expectations:
                 if isinstance(expectation.condition, MatchesJsonSchema):
-                    raise UnsupportedOperator("JSON Schema evaluation is deferred")
+                    _validate_json_schema_condition(expectation.condition)
                 resolve_operator(condition_operator(expectation.condition), "1")

@@ -5,18 +5,30 @@ from __future__ import annotations
 import base64
 import gzip
 import io
+import logging
 from typing import Any
 
 from agentgate.trace.models import IngestionReport, OtlpIngestionLimits
 from agentgate.trace.normalizer import normalize_otlp_json
 from agentgate.trace.service import TraceIngestionService, TraceRepository
 
+LOGGER = logging.getLogger(__name__)
+
 
 def ingest_otlp_http_json(
     payload: dict[str, Any], repository: TraceRepository,
     limits: OtlpIngestionLimits | None = None,
 ) -> IngestionReport:
-    batch = normalize_otlp_json(payload, limits)
+    def resolver(trace_id: str):
+        getter = getattr(repository, "get_pending_trace", None)
+        pending = getter(trace_id) if getter is not None else None
+        if pending is None:
+            return None
+        return pending.run_id, pending.case_id, pending.invocation_id
+
+    batch = normalize_otlp_json(
+        payload, limits, correlation_resolver=resolver
+    )
     return TraceIngestionService(repository).ingest(batch)
 
 

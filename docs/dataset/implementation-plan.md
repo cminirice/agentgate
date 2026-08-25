@@ -1,5 +1,11 @@
 # Dataset and Case Management Plan
 
+> [!IMPORTANT]
+> Pre-refactor design record. Behavior and acceptance criteria remain useful, but file
+> paths and module ownership are superseded by
+> [the architecture review ledger](../architecture-review-ledger.md).
+
+
 ## Goal
 
 Build a real SQLite-backed Dataset and Case workflow that can be tested from the Chinese
@@ -47,9 +53,10 @@ npm run build
 npm run test:e2e
 ```
 
-The browser suite covers desktop and Pixel 7 layouts with a dedicated SQLite database.
-Excel import/export, automatic generation, and single-Case rerun remain deferred as
-described below.
+The browser suite uses a dedicated SQLite database. The current regression-set acceptance
+scope is desktop; earlier mobile coverage is not part of this increment.
+Single-Case rerun and the regression-set workflow were implemented after checkpoints 1–3.
+Excel import/export and automatic generation remain deferred as described below.
 
 ## Original gap (resolved)
 
@@ -344,7 +351,8 @@ appear to own the same behavior.
 
 - Excel import/export.
 - Automatic generation into a draft.
-- Single-Case rerun and regression-set workflow.
+- Single-Case rerun. — done
+- Regression-set workflow. — done
 
 ## Acceptance test
 
@@ -360,7 +368,7 @@ The main Playwright scenario uses only real APIs:
 8. Confirm the historical Run still displays its version-1 snapshot.
 
 Also test invalid Cases, publishing an empty draft, archived data, content hashing, JSON
-round trips, desktop layout, and mobile editing.
+round trips, and desktop layout. Mobile editing is outside the current acceptance scope.
 
 ## Deferred
 

@@ -1,5 +1,11 @@
 # Evaluator Implementation Plan
 
+> [!IMPORTANT]
+> Pre-refactor design record. Behavior and acceptance criteria remain useful, but file
+> paths and module ownership are superseded by
+> [the architecture review ledger](../architecture-review-ledger.md).
+
+
 ## Goal
 
 Extend the existing evaluator kernel with the highest-priority deterministic output

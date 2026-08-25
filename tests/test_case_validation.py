@@ -1,7 +1,14 @@
 import pytest
 
 from agentgate.case import DatasetValidationError, validate_dataset_version
-from agentgate.domain import Case, CaseTurn, DatasetVersion, Equals, StateExpectation
+from agentgate.domain import (
+    Case,
+    CaseTurn,
+    DatasetVersion,
+    Equals,
+    MatchesJsonSchema,
+    StateExpectation,
+)
 
 
 def test_validation_rejects_empty_dataset_and_overlapping_tools():
@@ -57,3 +64,25 @@ def test_validation_rejects_blank_case_and_turn_ids():
     paths = {item.path for item in error.value.issues}
     assert "cases[0].id" in paths
     assert "cases[0].turns[0].id" in paths
+
+
+def test_validation_accepts_json_schema_condition():
+    version = DatasetVersion(
+        dataset_id="dataset",
+        cases=(Case(
+            name="schema",
+            turns=(CaseTurn(
+                id="turn",
+                input={"skill": "loan_approval"},
+                expectations=(StateExpectation(
+                    path="risk",
+                    condition=MatchesJsonSchema(json_schema={
+                        "type": "object",
+                        "required": ["level"],
+                        "properties": {"level": {"type": "string"}},
+                    }),
+                ),),
+            ),),
+        ),),
+    )
+    validate_dataset_version(version)

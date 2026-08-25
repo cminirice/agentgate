@@ -76,7 +76,7 @@ class CheckResult(DomainModel):
         return thaw_json(value)
 
     @model_validator(mode="after")
-    def validate_outcome_fields(self) -> "CheckResult":
+    def validate_outcome_fields(self) -> CheckResult:
         if self.outcome == Outcome.FAIL and self.failure_observation is None:
             raise ValueError("failed checks require failure_observation")
         if self.outcome != Outcome.FAIL and self.failure_observation is not None:
@@ -112,7 +112,7 @@ class Result(DomainModel):
     trace_content_sha256: str | None = None
 
     @model_validator(mode="after")
-    def validate_result(self) -> "Result":
+    def validate_result(self) -> Result:
         if self.outcome in (Outcome.NOT_APPLICABLE, Outcome.ERROR) and self.score is not None:
             raise ValueError("not-applicable/error results cannot have a score")
         if self.outcome in (Outcome.PASS, Outcome.FAIL, Outcome.REVIEW) and self.score is None:

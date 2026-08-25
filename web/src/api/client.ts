@@ -1,8 +1,15 @@
 import type {
-  DatasetSummary, DatasetVersion, EvaluationCase, JsonObject,
+  DatasetRecord, DatasetSummary, DatasetVersion, EvaluationCase, JsonObject,
 } from '../types/dataset'
 
-export interface Version { id: string; label: string }
+export interface Version {
+  id: string
+  label: string
+  is_latest: boolean
+  adapter_type?: 'python_fn'|'http'
+  endpoint?: string
+  credential_ref?: string|null
+}
 export type DatasetOption = DatasetSummary
 export interface EvaluatorOption {
   id: string
@@ -18,10 +25,18 @@ export interface EvaluatorOption {
 export interface Run {
   id: string
   status: string
+  parent_run_id: string|null
+  root_run_id: string|null
+  rerun_case_id: string|null
   snapshot: {
-    target: { version: string }
+    target: {
+      ref: { external_target_id: string; external_version_id: string }
+      display_name: string
+      adapter_type: string
+    }
     dataset: DatasetVersion
     evaluator_specs: EvaluatorOption[]
+    selected_case_ids: string[]|null
   }
 }
 export interface Evidence { trace_id: string; span_ids: string[]; description: string }
@@ -80,6 +95,25 @@ export interface Metric {
   incomplete: boolean
 }
 export interface Report { run: Run; results: Result[]; gate: Gate; metrics: Metric[] }
+export type ComparisonStatus = 'improved'|'regressed'|'unchanged'|'incomparable'
+export interface RerunComparison {
+  root_run_id: string
+  parent_run_id: string
+  rerun_run_id: string
+  case_id: string
+  case_name: string
+  before_target_version: string
+  after_target_version: string
+  overall: ComparisonStatus|'mixed'
+  counts: Record<ComparisonStatus, number>
+  evaluators: {
+    evaluator_id: string
+    evaluator_name: string
+    status: ComparisonStatus
+    before: { outcome: Outcome; score: number|null; reason: string }|null
+    after: { outcome: Outcome; score: number|null; reason: string }|null
+  }[]
+}
 export interface TraceTurn {
   turn_id: string
   input: JsonObject
@@ -104,6 +138,17 @@ export interface Overview {
   completed_runs: number
   case_count: number
   latest: Report|null
+}
+export interface AddRegressionCaseRequest {
+  regression_dataset_id?: string
+  new_dataset_name?: string
+  new_dataset_description?: string
+  reason?: string
+}
+export interface AddRegressionCaseResponse {
+  dataset: DatasetRecord
+  draft: DatasetVersion
+  case: EvaluationCase
 }
 
 export class ApiError extends Error {
@@ -153,6 +198,21 @@ export const api = {
     }),
   }),
   report: (id: string) => request<Report>(`/api/runs/${id}`),
+  rerunCase: (runId: string, caseId: string, targetVersion?: string) =>
+    request<Run>(`/api/runs/${runId}/cases/${caseId}/rerun`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_version: targetVersion }),
+    }),
+  comparison: (runId: string) => request<RerunComparison>(`/api/runs/${runId}/comparison`),
+  addCaseToRegressionDataset: (
+    runId: string, caseId: string, payload: AddRegressionCaseRequest,
+  ) => request<AddRegressionCaseResponse>(
+    `/api/runs/${encodeURIComponent(runId)}/cases/${encodeURIComponent(caseId)}/regression`,
+    {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  ),
   trace: (runId: string, caseId: string) =>
     request<Trace>(`/api/runs/${runId}/traces/${caseId}`),
 }

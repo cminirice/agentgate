@@ -1,5 +1,10 @@
 # Demo Capability Mapping
 
+> [!NOTE]
+> Superseded planning record. Package ownership here is not authoritative for
+> `refactor-1`; see [the architecture review ledger](../../architecture-review-ledger.md).
+
+
 This document maps AgentGate demo capabilities to package ownership. A package being present
 means its boundary is reserved; it does not mean the capability is implemented.
 

@@ -192,7 +192,7 @@ class Trace(DomainModel):
     def completion_sequence(self) -> int:
         return max((span.sequence for span in self.spans), default=-1) + 1
 
-    def for_turn(self, turn_id: str) -> "Trace":
+    def for_turn(self, turn_id: str) -> Trace:
         record = next((item for item in self.turns if item.turn_id == turn_id), None)
         if record is None:
             if len(self.turns) <= 1:

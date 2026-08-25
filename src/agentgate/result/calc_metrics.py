@@ -48,7 +48,7 @@ def _counts(results: Iterable[Result]) -> dict[str, int | bool]:
 def _metric_score(results: list[Result]) -> float | None:
     by_case: dict[str, list[float]] = defaultdict(list)
     for result in results:
-        if result.outcome in (Outcome.PASS, Outcome.FAIL, Outcome.REVIEW):
+        if result.outcome in (Outcome.PASS, Outcome.FAIL, Outcome.REVIEW):  # noqa: SIM102
             if result.score is not None:
                 by_case[result.case_id].append(result.score)
     case_scores = [mean(scores) for scores in by_case.values() if scores]
