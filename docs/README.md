@@ -7,9 +7,6 @@
   `refactor-1` structure while Level 2 and Level 3 review is in progress.
 - Running code and automated tests describe the inherited `goal/p1-demo` baseline; they
   do not override confirmed refactor decisions in the ledger.
-- [Current implementation progress](progress.md) records what is verified on
-  `codex/trace-ingestion`, including Trace ingestion, HTTP Target integration,
-  regression sets, and single-Case rerun.
 
 The consolidated `arch.md`, implementation roadmap, and capability mapping will be
 regenerated after the architecture review is complete.

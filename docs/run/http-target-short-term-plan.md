@@ -7,7 +7,7 @@
 > The implemented Trace module now exceeds this short-term plan's original minimum:
 > OTLP/HTTP JSON and protobuf, gzip, bounded normalization, merge/deduplication,
 > completeness, conflicts, and immutable revisions are available. OTLP/gRPC remains
-> deferred. See `docs/progress.md` and `docs/trace/ingestion-plan.md`.
+> deferred. See `docs/trace/ingestion-plan.md`.
 >
 > Design source: `docs/run/external-target-plan.md` (behavior and acceptance criteria
 > remain authoritative). This document scopes a short-term implementation subset and
