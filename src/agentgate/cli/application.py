@@ -85,5 +85,19 @@ def evaluate_http(
     }, ensure_ascii=False))
 
 
+@app.command()
+def serve(
+    port: int = typer.Option(
+        ..., "--port", "-p", help="监听端口（必填，1-65535）", min=1, max=65535,
+    ),
+    host: str = typer.Option("0.0.0.0", "--host", help="监听地址，默认 0.0.0.0"),
+    reload: bool = typer.Option(True, "--reload/--no-reload", help="代码热重载（开发默认开启）"),
+) -> None:
+    """启动 API 服务（开发模式默认热重载，端口必填）。"""
+    import uvicorn
+
+    uvicorn.run("agentgate.server.application:app", host=host, port=port, reload=reload)
+
+
 if __name__ == "__main__":
     app()
