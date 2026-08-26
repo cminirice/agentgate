@@ -78,3 +78,26 @@ test('shows structured validation when an empty draft cannot be published', asyn
   await expect(page.getByText('草稿尚不能发布')).toBeVisible()
   await expect(page.getByText('测评集至少需要一个用例', { exact: true })).toBeVisible()
 })
+
+test('surfaces backend JSON Schema preflight errors without blocking draft save', async ({ page }) => {
+  await page.goto('/datasets')
+  await createDataset(page, `Schema预检-${Date.now()}`)
+  await page.getByTestId('add-case').click()
+  await page.getByTestId('case-name').fill('Schema 预检用例')
+  await page.getByTestId('turn-input-0').fill(JSON.stringify({ skill: 'demo' }, null, 2))
+
+  await page.getByTestId('add-expectation').click()
+  await page.getByRole('menuitem', { name: '最终状态' }).click()
+  await page.getByTestId('expectation-condition-0').click()
+  await page.getByRole('option', { name: 'JSON Schema 校验' }).click()
+
+  await page.getByTestId('expectation-schema-0').fill(
+    JSON.stringify({ $schema: 'http://json-schema.org/draft-04/schema#', type: 'object' }, null, 2),
+  )
+  await expect(page.getByTestId('expectation-schema-preflight-error-0')).toContainText(
+    'unsupported JSON Schema draft',
+  )
+
+  await page.getByTestId('save-case').click()
+  await expect(page.getByText('用例已保存到草稿')).toBeVisible()
+})

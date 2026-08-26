@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { api } from '../../api/client'
 import type { Expectation } from '../../types/dataset'
 
 const props = defineProps<{ modelValue: Expectation[]; disabled?: boolean }>()
@@ -9,6 +10,9 @@ let syncing = false
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 const schemaTexts = ref<Record<string, string>>({})
 const schemaErrors = ref<Record<string, string | null>>({})
+const schemaPreflightErrors = ref<Record<string, string | null>>({})
+const preflightTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const PREFLIGHT_DEBOUNCE_MS = 400
 
 watch(
   () => props.modelValue,
@@ -17,6 +21,7 @@ watch(
     rows.value = cloneJson(value ?? [])
     schemaTexts.value = {}
     schemaErrors.value = {}
+    schemaPreflightErrors.value = {}
     queueMicrotask(() => { syncing = false })
   },
   { immediate: true, deep: true },
@@ -63,6 +68,12 @@ function changeCondition(row: any, kind: string) {
   row.condition = condition(kind)
   schemaTexts.value[row.id] = ''
   schemaErrors.value[row.id] = null
+  schemaPreflightErrors.value[row.id] = null
+  const timer = preflightTimers.get(row.id)
+  if (timer) {
+    clearTimeout(timer)
+    preflightTimers.delete(row.id)
+  }
 }
 
 function asJson(value: unknown) {
@@ -88,10 +99,49 @@ function schemaError(row: any): string | null {
   return schemaErrors.value[row.id] ?? null
 }
 
+function preflightError(row: any): string | null {
+  return schemaPreflightErrors.value[row.id] ?? null
+}
+
+function clearPreflight(row: any) {
+  schemaPreflightErrors.value[row.id] = null
+  const timer = preflightTimers.get(row.id)
+  if (timer) {
+    clearTimeout(timer)
+    preflightTimers.delete(row.id)
+  }
+}
+
+function schedulePreflight(row: any) {
+  clearPreflight(row)
+  const timer = setTimeout(() => {
+    void runPreflight(row)
+  }, PREFLIGHT_DEBOUNCE_MS)
+  preflightTimers.set(row.id, timer)
+}
+
+async function runPreflight(row: any) {
+  const schema = row.condition?.json_schema
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return
+  const instanceMode = row.condition?.instance_mode ?? 'structured'
+  try {
+    const result = await api.validateSchema({
+      json_schema: schema,
+      instance_mode: instanceMode,
+    })
+    schemaPreflightErrors.value[row.id] = result.valid
+      ? null
+      : result.errors[0]?.message ?? 'Schema 校验未通过'
+  } catch {
+    schemaPreflightErrors.value[row.id] = null
+  }
+}
+
 function setSchema(row: any, value: string) {
   schemaTexts.value[row.id] = value
   if (value.trim() === '') {
     schemaErrors.value[row.id] = null
+    clearPreflight(row)
     return
   }
   let parsed: unknown
@@ -99,15 +149,23 @@ function setSchema(row: any, value: string) {
     parsed = JSON.parse(value)
   } catch (e: any) {
     schemaErrors.value[row.id] = `JSON 格式错误：${e.message}`
+    clearPreflight(row)
     return
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     schemaErrors.value[row.id] = 'JSON Schema 顶层必须是对象，不能是数组或标量'
+    clearPreflight(row)
     return
   }
   schemaErrors.value[row.id] = null
   row.condition.json_schema = parsed
+  schedulePreflight(row)
 }
+
+onBeforeUnmount(() => {
+  for (const timer of preflightTimers.values()) clearTimeout(timer)
+  preflightTimers.clear()
+})
 
 function allowedText(row: any) {
   return (row.condition.allowed ?? []).map((item: unknown) =>
@@ -157,7 +215,7 @@ function setAllowed(row: any, value: string) {
           <el-option label="任意一次通过" value="any" />
           <el-option label="所有调用通过" value="all" />
         </el-select>
-        <el-select :model-value="row.condition.kind" :disabled="disabled" @update:model-value="changeCondition(row, $event)">
+        <el-select :model-value="row.condition.kind" :disabled="disabled" :data-testid="`expectation-condition-${index}`" @update:model-value="changeCondition(row, $event)">
           <el-option label="等于" value="equals" />
           <el-option label="数值容差" value="within_tolerance" />
           <el-option label="数值范围" value="within_range" />
@@ -195,6 +253,7 @@ function setAllowed(row: any, value: string) {
             @input="setSchema(row, $event)"
           />
           <div v-if="schemaError(row)" class="schema-error" style="color: var(--el-color-danger); font-size: 12px; margin-top: 4px;">{{ schemaError(row) }}</div>
+          <div v-else-if="preflightError(row)" :data-testid="`expectation-schema-preflight-error-${index}`" class="schema-preflight-error" style="color: var(--el-color-danger); font-size: 12px; margin-top: 4px;">{{ preflightError(row) }}</div>
           <el-select
             :model-value="row.condition.instance_mode ?? 'structured'"
             :disabled="disabled"

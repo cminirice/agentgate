@@ -118,3 +118,16 @@ export interface ValidationIssue {
   path: string
   message: string
 }
+
+export interface SchemaIssue {
+  code: string
+  message: string
+  limit?: number | null
+  actual?: number | null
+  ref?: string | null
+  declared?: string | null
+}
+
+export type SchemaValidationResult =
+  | { valid: true }
+  | { valid: false; errors: SchemaIssue[] }
