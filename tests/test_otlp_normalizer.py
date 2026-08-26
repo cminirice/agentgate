@@ -110,3 +110,24 @@ def test_explicit_null_output_is_a_present_signal_but_absent_is_not():
 
     payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"].pop()
     assert normalize_otlp_json(payload).signals == ()
+
+
+def test_legacy_terminal_string_and_json_fields_are_normalized():
+    payload = _span([
+        _attr("agentgate.run.id", "stringValue", "run"),
+        _attr("agentgate.case.id", "stringValue", "case"),
+        _attr("agentgate.turn.id", "stringValue", "turn"),
+        _attr("agentgate.trace.complete", "stringValue", "true"),
+        _attr("agentgate.turn.complete", "stringValue", "true"),
+        _attr("agentgate.final_output.json", "stringValue", '{"answer":"ok"}'),
+        _attr("agentgate.final_state.json", "stringValue", '{"done":true}'),
+    ])
+
+    batch = normalize_otlp_json(payload)
+
+    assert {signal.kind: signal.value for signal in batch.signals} == {
+        "trace_complete": True,
+        "turn_complete": True,
+        "final_output": {"answer": "ok"},
+        "final_state": {"done": True},
+    }

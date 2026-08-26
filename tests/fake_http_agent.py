@@ -14,14 +14,20 @@ class FakeHttpAgent:
 
     def __init__(
         self, repository=None, *, behavior: str = "success",
-        trace_export: bool = True,
+        trace_export: bool = True, extra_span_count: int = 0,
+        export_batch_size: int = 100, include_duplicate: bool = False,
     ) -> None:
         self.repository = repository
         self.behavior = behavior
         self.trace_export = trace_export
+        self.extra_span_count = extra_span_count
+        self.export_batch_size = export_batch_size
+        self.include_duplicate = include_duplicate
         self.received_headers: list[dict[str, str]] = []
         self.received_bodies: list[dict[str, Any]] = []
         self.exported_trace_ids: list[str] = []
+        self.export_reports = []
+        self.status_before_terminal: str | None = None
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(self))
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
@@ -95,7 +101,14 @@ def _make_handler(agent: FakeHttpAgent):
             output = {"message": "processed", "status": "approved"}
             final_state = {"approved": True, "status": "approved"}
             if agent.trace_export and agent.repository is not None:
-                _export_otlp(agent.repository, trace_id, run_id, case_id)
+                reports, status_before_terminal = _export_otlp(
+                    agent.repository, trace_id, run_id, case_id,
+                    body.get("turn_id"), body.get("invocation_id"),
+                    output, final_state, agent.extra_span_count,
+                    agent.export_batch_size, agent.include_duplicate,
+                )
+                agent.export_reports.extend(reports)
+                agent.status_before_terminal = status_before_terminal
                 agent.exported_trace_ids.append(trace_id)
             response = {
                 "invocation_id": body.get("invocation_id", ""),
@@ -120,13 +133,16 @@ def _extract_trace_id(traceparent: str) -> str:
     return uuid4().hex
 
 
-def _export_otlp(repository, trace_id: str, run_id: str, case_id: str) -> None:
+def _export_otlp(
+    repository, trace_id: str, run_id: str, case_id: str,
+    turn_id: str | None, invocation_id: str | None,
+    output: dict[str, Any], final_state: dict[str, Any],
+    extra_span_count: int = 0, batch_size: int = 100,
+    include_duplicate: bool = False,
+):
     """Export OpenInference-style OTLP spans to the repository."""
     from agentgate.trace.receivers.otlp_http import ingest_otlp_http_json
-    payload = {
-        "resourceSpans": [{
-            "resource": {"attributes": []},
-            "scopeSpans": [{"spans": [
+    ordinary_spans = [
                 {
                     "traceId": trace_id,
                     "spanId": uuid4().hex[:16],
@@ -146,7 +162,79 @@ def _export_otlp(repository, trace_id: str, run_id: str, case_id: str) -> None:
                         {"key": "tool.name", "value": {"stringValue": "approve_loan"}},
                     ],
                 },
-            ]}],
-        }]
-    }
-    ingest_otlp_http_json(payload, repository)
+                *[
+                    {
+                        "traceId": trace_id,
+                        "spanId": uuid4().hex[:16],
+                        "name": f"tool.batch.{index}",
+                        "startTimeUnixNano": str(1_000 + index * 2),
+                        "endTimeUnixNano": str(1_001 + index * 2),
+                        "attributes": [{
+                            "key": "openinference.span.kind",
+                            "value": {"stringValue": "TOOL"},
+                        }],
+                    }
+                    for index in range(extra_span_count)
+                ],
+    ]
+    terminal_span = {
+                    "traceId": trace_id,
+                    "spanId": uuid4().hex[:16],
+                    "name": "agent.complete",
+                    "attributes": [
+                        {
+                            "key": "agentgate.span.kind",
+                            "value": {"stringValue": "event"},
+                        },
+                        {
+                            "key": "agentgate.turn.id",
+                            "value": {"stringValue": turn_id},
+                        },
+                        {
+                            "key": "agentgate.invocation.id",
+                            "value": {"stringValue": invocation_id},
+                        },
+                        {
+                            "key": "agentgate.trace.complete",
+                            "value": {"stringValue": "true"},
+                        },
+                        {
+                            "key": "agentgate.turn.complete",
+                            "value": {"stringValue": "true"},
+                        },
+                        {
+                            "key": "agentgate.final_output.json",
+                            "value": {
+                                "stringValue": json.dumps(output, ensure_ascii=False),
+                            },
+                        },
+                        {
+                            "key": "agentgate.final_state.json",
+                            "value": {
+                                "stringValue": json.dumps(
+                                    final_state, ensure_ascii=False
+                                ),
+                            },
+                        },
+                    ],
+                }
+
+    def payload(spans):
+        return {
+            "resourceSpans": [{
+                "resource": {"attributes": []},
+                "scopeSpans": [{"spans": spans}],
+            }]
+        }
+
+    reports = []
+    reversed_spans = list(reversed(ordinary_spans))
+    for offset in range(0, len(reversed_spans), batch_size):
+        chunk = reversed_spans[offset:offset + batch_size]
+        if include_duplicate and offset == 0:
+            chunk = [*chunk, chunk[0]]
+        reports.append(ingest_otlp_http_json(payload(chunk), repository))
+    current = repository.get_trace(run_id, case_id)
+    status_before_terminal = current.status.value if current is not None else None
+    reports.append(ingest_otlp_http_json(payload([terminal_span]), repository))
+    return reports, status_before_terminal
