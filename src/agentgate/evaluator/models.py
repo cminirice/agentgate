@@ -72,6 +72,17 @@ class OperatorOutcome(DomainModel):
     reason: str
 
 
+class SchemaIssue(DomainModel):
+    """Structured JSON Schema validation finding; runtime-only, not persisted."""
+
+    code: str
+    message: str
+    limit: int | None = None
+    actual: int | None = None
+    ref: str | None = None
+    declared: str | None = None
+
+
 ResultResolver = Callable[[str], Result]
 
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -73,6 +74,11 @@ class CreateDraftRequest(BaseModel):
 
 class ReorderCasesRequest(BaseModel):
     case_ids: list[str]
+
+
+class ValidateSchemaRequest(BaseModel):
+    json_schema: object | str
+    instance_mode: Literal["structured", "json_text"] = "structured"
 
 
 def _raise_dataset_error(exc: ValueError, status_code: int = 422) -> None:
@@ -262,6 +268,19 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     def evaluators():
         return service.evaluators()
 
+    @api.post("/json-schema/validate", status_code=200)
+    def validate_json_schema(request: ValidateSchemaRequest):
+        schema = request.json_schema
+        if isinstance(schema, str):
+            try:
+                schema = json.loads(schema)
+            except json.JSONDecodeError as exc:
+                return {"valid": False, "errors": [{
+                    "code": "input_parse_error",
+                    "message": f"JSON 解析失败：{exc.msg}",
+                }]}
+        return service.validate_json_schema(schema, request.instance_mode)
+
     @api.get("/runs")
     def runs():
         return repository.list_runs()
@@ -379,7 +398,6 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 )
             if "json" not in content_type:
                 raise HTTPException(status_code=415, detail="unsupported OTLP content type")
-            import json
             report = ingest_otlp_http_json(json.loads(body), repository, limits)
         except (OSError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
