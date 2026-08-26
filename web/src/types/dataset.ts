@@ -24,7 +24,7 @@ export type Condition =
   | { kind: 'matches_pattern'; pattern: string }
   | { kind: 'one_of'; allowed: JsonValue[] }
   | { kind: 'must_be_missing' }
-  | { kind: 'matches_json_schema'; json_schema: JsonObject }
+  | { kind: 'matches_json_schema'; json_schema: JsonObject; instance_mode?: 'structured' | 'json_text' }
 
 interface ExpectationBase {
   id: string
