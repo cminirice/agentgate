@@ -21,6 +21,7 @@ from agentgate.domain import (
     freeze_json,
 )
 from agentgate.evaluator import EVALUATORS
+from agentgate.evaluator import validation as evaluator_validation
 from agentgate.run.core import RunEngine
 from agentgate.run.targets.base import (
     EnvCredentialResolver,
@@ -440,6 +441,15 @@ class EvaluationService:
             }
             for item in EVALUATORS
         ]
+
+    def validate_json_schema(self, json_schema, instance_mode: str = "structured") -> dict:
+        issues = evaluator_validation.validate_json_schema(json_schema, instance_mode)
+        if not issues:
+            return {"valid": True}
+        return {
+            "valid": False,
+            "errors": [issue.model_dump(mode="json", exclude_none=True) for issue in issues],
+        }
 
 
 def _result_summary(result) -> dict | None:

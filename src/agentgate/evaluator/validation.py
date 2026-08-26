@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import os
+from collections.abc import Mapping
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -14,18 +17,49 @@ from agentgate.domain import (
     MatchesJsonSchema,
     RuleEvaluatorSpec,
 )
+from agentgate.domain.base import canonical_json
 
 from .models import (
     DuplicateEvaluatorId,
     EvaluatorVersionMismatch,
     InvalidHybridEvaluator,
     MissingEvaluatorDependency,
+    SchemaIssue,
 )
 from .observations import condition_operator
 from .registry import resolve_evaluator, resolve_operator
 
+LOGGER = logging.getLogger(__name__)
+
 _SUPPORTED_DRAFT_MARKER = "2020-12"
 _REMOTE_REF_PREFIXES = ("http://", "https://", "file://")
+
+_DEFAULT_MAX_DEPTH = 64
+_DEFAULT_MAX_SERIALIZED_SIZE = 262144
+_MAX_SCHEMA_ERROR_LENGTH = 500
+
+
+def _resolve_positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        LOGGER.warning("invalid %s=%r, falling back to %d", name, raw, default)
+        return default
+    if value <= 0:
+        LOGGER.warning("invalid %s=%r (must be positive), falling back to %d", name, raw, default)
+        return default
+    return value
+
+
+_MAX_DEPTH = _resolve_positive_int_env(
+    "AGENTGATE_JSON_SCHEMA_MAX_DEPTH", _DEFAULT_MAX_DEPTH,
+)
+_MAX_SERIALIZED_SIZE = _resolve_positive_int_env(
+    "AGENTGATE_JSON_SCHEMA_MAX_SERIALIZED_SIZE", _DEFAULT_MAX_SERIALIZED_SIZE,
+)
 
 
 def _find_remote_ref(schema: Any) -> str | None:
@@ -46,18 +80,78 @@ def _find_remote_ref(schema: Any) -> str | None:
     return None
 
 
-def _validate_json_schema_condition(condition: MatchesJsonSchema) -> None:
-    schema = condition.json_schema.to_dict()
-    declared = schema.get("$schema")
-    if isinstance(declared, str) and _SUPPORTED_DRAFT_MARKER not in declared:
-        raise ValueError(f"unsupported JSON Schema draft: {declared}")
-    remote_ref = _find_remote_ref(schema)
-    if remote_ref is not None:
-        raise ValueError(f"remote $ref is not supported: {remote_ref}")
+def _measure_depth(schema: Any) -> int:
+    # Explicit stack iteration (not recursion) so an adversarial deep schema
+    # cannot trigger RecursionError in the depth check itself. Scalars do not
+    # add depth; only dict/list/tuple (Mapping) nesting is counted.
+    if not isinstance(schema, (Mapping, list, tuple)):
+        return 0
+    max_depth = 0
+    stack: list[tuple[Any, int]] = [(schema, 1)]
+    while stack:
+        node, depth = stack.pop()
+        max_depth = max(max_depth, depth)
+        children = node.values() if isinstance(node, Mapping) else node
+        for child in children:
+            if isinstance(child, (Mapping, list, tuple)):
+                stack.append((child, depth + 1))
+    return max_depth
+
+
+def validate_json_schema(
+    schema: Mapping[str, Any], instance_mode: str,
+) -> list[SchemaIssue]:
+    """Run all JSON Schema input gates (§6.2 order). Empty list = valid.
+
+    ``instance_mode`` is accepted so the precheck API and Run-time path share one
+    logic source; the size/depth/draft/ref gates do not depend on it today.
+    """
+    _ = instance_mode
+    if isinstance(schema, Mapping):
+        declared = schema.get("$schema")
+        if isinstance(declared, str) and _SUPPORTED_DRAFT_MARKER not in declared:
+            return [SchemaIssue(
+                code="unsupported_draft",
+                message=f"unsupported JSON Schema draft: {declared}",
+                declared=declared,
+            )]
+        size = len(canonical_json(schema).encode("utf-8"))
+        if size > _MAX_SERIALIZED_SIZE:
+            return [SchemaIssue(
+                code="size_exceeded",
+                message=f"schema 序列化大小 {size} 超过上限 {_MAX_SERIALIZED_SIZE}",
+                limit=_MAX_SERIALIZED_SIZE,
+                actual=size,
+            )]
+        depth = _measure_depth(schema)
+        if depth > _MAX_DEPTH:
+            return [SchemaIssue(
+                code="depth_exceeded",
+                message=f"schema 嵌套深度 {depth} 超过上限 {_MAX_DEPTH}",
+                limit=_MAX_DEPTH,
+                actual=depth,
+            )]
+        remote_ref = _find_remote_ref(schema)
+        if remote_ref is not None:
+            return [SchemaIssue(
+                code="remote_ref_forbidden",
+                message=f"remote $ref is not supported: {remote_ref}",
+                ref=remote_ref,
+            )]
     try:
         Draft202012Validator.check_schema(schema)
     except SchemaError as exc:
-        raise ValueError(f"invalid JSON Schema: {exc.message}") from exc
+        message = exc.message
+        if len(message) > _MAX_SCHEMA_ERROR_LENGTH:
+            message = message[: _MAX_SCHEMA_ERROR_LENGTH - 1].rstrip() + "…"
+        return [SchemaIssue(code="invalid_schema", message=f"invalid JSON Schema: {message}")]
+    return []
+
+
+def _validate_json_schema_condition(condition: MatchesJsonSchema) -> None:
+    issues = validate_json_schema(condition.json_schema.to_dict(), condition.instance_mode)
+    if issues:
+        raise ValueError(issues[0].message)
 
 
 def validate_evaluation_plan(dataset: DatasetVersion, evaluators: tuple) -> None:
