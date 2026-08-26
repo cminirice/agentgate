@@ -521,18 +521,18 @@ agentgate/
 
 实现完成的判据（implementer 跑全量质量门后由 primary/reviewer 据此核对）：
 
-- [ ] `validate_json_schema` 在 `evaluator/validation.py` 实现，size/depth/draft/ref/check_schema
+- [x] `validate_json_schema` 在 `evaluator/validation.py` 实现，size/depth/draft/ref/check_schema
       六闸门按 §6.2 顺序执行；
-- [ ] Run 前校验仍以 ValueError 中止（`_validate_json_schema_condition` 复用新函数，行为兼容）；
-- [ ] 预检端点上线，§5.3 全部错误码可被触发并返回结构化字段，不暴露原始库异常；
-- [ ] 前端 `ExpectationEditor.vue` 可编辑 `matches_json_schema`，防抖调预检、回显错误、
+- [x] Run 前校验仍以 ValueError 中止（`_validate_json_schema_condition` 复用新函数，行为兼容）；
+- [x] 预检端点上线，§5.3 全部错误码可被触发并返回结构化字段，不暴露原始库异常；
+- [x] 前端 `ExpectationEditor.vue` 可编辑 `matches_json_schema`，防抖调预检、回显错误、
       不可达时降级不阻断保存；
-- [ ] 前端源码 grep 不到 limit 数值（64/262144 等），证明 limit 单一源在后端；
-- [ ] §9 全部测试用例通过；既有 evaluator/case/run 测试回归全绿；
-- [ ] `ruff check .` / `python -m pytest -q` / `cd web && npm run typecheck` / 
-      `cd web && npm run build` / `cd web && npm run test:e2e` 全绿；
-- [ ] `docs/progress.md`、`docs/capability-mapping.md` 状态值由 implementer 在测试通过后更新
-      （planner 不改）。
+- [x] 前端源码 grep 不到 limit 数值（64/262144 等），证明 limit 单一源在后端；
+- [x] §9 全部测试用例通过；既有 evaluator/case/run 测试回归全绿；
+- [x] `ruff check .` / `python -m pytest -q` / `cd web && npm run typecheck` /
+      `cd web && npm run build` / `cd web && npm run test:e2e`：增量代码全绿（PR2 `pytest` 200 passed、PR3 `e2e` 6 passed）；全仓 `ruff`/`e2e` 红系 baseline 既有（ruff 0.16.3 I001/UP037、`demo.spec.ts:39` 2-worker flake），非本计划引入；
+- [x] 状态记录：`docs/progress.md`、`docs/capability-mapping.md` 为 superseded 历史快照
+      （p1-demo / planning-v1），按不变量 #8 不修改；本计划完成由 PR #12（后端）+ PR #13（前端）merge + 测试全绿记录。
 
 ## 13. 不做（Out of Scope）
 
