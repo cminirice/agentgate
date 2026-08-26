@@ -1,5 +1,6 @@
 import type {
   DatasetRecord, DatasetSummary, DatasetVersion, EvaluationCase, JsonObject,
+  SchemaValidationResult,
 } from '../types/dataset'
 
 export interface Version {
@@ -215,6 +216,14 @@ export const api = {
   ),
   trace: (runId: string, caseId: string) =>
     request<Trace>(`/api/runs/${runId}/traces/${caseId}`),
+  validateSchema: (payload: {
+    json_schema: unknown
+    instance_mode?: 'structured' | 'json_text'
+  }) => request<SchemaValidationResult>('/api/json-schema/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }),
 }
 
 export type { DatasetSummary, DatasetVersion, EvaluationCase }
