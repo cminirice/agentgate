@@ -115,7 +115,18 @@ def validate_json_schema(
                 message=f"unsupported JSON Schema draft: {declared}",
                 declared=declared,
             )]
-        size = len(canonical_json(schema).encode("utf-8"))
+        # canonical_json 的 json.dumps/thaw_json 递归实现；极深 schema（逼近 Python
+        # 递归天花板）会在迭代式 _measure_depth 之前抛 RecursionError，兜底返
+        # depth_exceeded 以避免预检 500 / Run 前 RecursionError 泄漏。
+        try:
+            size = len(canonical_json(schema).encode("utf-8"))
+        except RecursionError:
+            return [SchemaIssue(
+                code="depth_exceeded",
+                message=f"schema 嵌套深度超过递归天花板，无法精确计数；上限 {_MAX_DEPTH}",
+                limit=_MAX_DEPTH,
+                actual=None,
+            )]
         if size > _MAX_SERIALIZED_SIZE:
             return [SchemaIssue(
                 code="size_exceeded",

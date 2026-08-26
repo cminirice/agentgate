@@ -1,3 +1,4 @@
+import sys
 from datetime import UTC, datetime
 
 import pytest
@@ -181,6 +182,19 @@ def test_validate_json_schema_deep_input_does_not_raise_recursion_error():
     issues = validate_json_schema(schema, "structured")
     assert len(issues) == 1
     assert issues[0].code == "depth_exceeded"
+
+
+def test_validate_json_schema_extreme_depth_returns_depth_exceeded_not_recursion_error():
+    # 对抗性极深 schema（逼近/超过 Python 递归天花板）：迭代构造避免测试自身递归。
+    # 默认天花板下由 size 闸门的 RecursionError 兜底返 depth_exceeded（actual=None）；
+    # 天花板被调高时由迭代 depth 计数兜住（actual=depth）。两路径均不抛 RecursionError。
+    depth = sys.getrecursionlimit() + 100
+    schema = _schema_of_depth(depth)
+    issues = validate_json_schema(schema, "structured")
+    assert len(issues) == 1
+    assert issues[0].code == "depth_exceeded"
+    assert issues[0].limit == evaluator_validation._MAX_DEPTH
+    assert issues[0].actual is None or issues[0].actual > issues[0].limit
 
 
 def test_validate_json_schema_depth_limit_respects_env_override(monkeypatch):

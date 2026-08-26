@@ -266,6 +266,8 @@ run/core.py::validate_evaluation_plan
 按"先廉价新闸门、后昂贵库调用"排列，使恶意输入在触发 `check_schema` 的潜在 RecursionError
 前即被拒：
 
+> 注：size 闸门的 `canonical_json` 内部 `json.dumps`/`thaw_json` 亦是递归实现，对 depth≥~998（逼近 `sys.getrecursionlimit`）的对抗性 schema 会在迭代 depth 闸门前先抛 `RecursionError`；该极端尾部由 size 闸门 `try/except RecursionError` 兜底返 `depth_exceeded`，迭代 depth 闸门保护该天花板之下的深度（65–997）。
+
 1. `input_parse_error`（仅预检 API 入口：string → json.loads）
 2. `unsupported_draft`（`$schema` 声明检查，现有逻辑）
 3. `size_exceeded`（`canonical_json` 字节数，新增）
