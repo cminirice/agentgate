@@ -7,12 +7,16 @@ const emit = defineEmits<{ 'update:modelValue': [value: Expectation[]] }>()
 const rows = ref<any[]>([])
 let syncing = false
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+const schemaTexts = ref<Record<string, string>>({})
+const schemaErrors = ref<Record<string, string | null>>({})
 
 watch(
   () => props.modelValue,
   value => {
     syncing = true
     rows.value = cloneJson(value ?? [])
+    schemaTexts.value = {}
+    schemaErrors.value = {}
     queueMicrotask(() => { syncing = false })
   },
   { immediate: true, deep: true },
@@ -28,6 +32,7 @@ const condition = (kind = 'equals'): any => {
   if (kind === 'within_range') return { kind, minimum: null, maximum: null }
   if (kind === 'matches_pattern') return { kind, pattern: '' }
   if (kind === 'one_of') return { kind, allowed: [] }
+  if (kind === 'matches_json_schema') return { kind, json_schema: {}, instance_mode: 'structured' }
   return { kind: 'must_be_missing' }
 }
 
@@ -56,6 +61,8 @@ function changeKind(index: number, kind: string) {
 
 function changeCondition(row: any, kind: string) {
   row.condition = condition(kind)
+  schemaTexts.value[row.id] = ''
+  schemaErrors.value[row.id] = null
 }
 
 function asJson(value: unknown) {
@@ -65,6 +72,41 @@ function asJson(value: unknown) {
 function setJson(row: any, field: string, value: string) {
   try { row.condition[field] = JSON.parse(value) }
   catch { row.condition[field] = value }
+}
+
+function schemaText(row: any): string {
+  const cached = schemaTexts.value[row.id]
+  if (cached !== undefined) return cached
+  const schema = row.condition?.json_schema
+  if (schema && typeof schema === 'object' && !Array.isArray(schema) && Object.keys(schema).length > 0) {
+    return JSON.stringify(schema, null, 2)
+  }
+  return ''
+}
+
+function schemaError(row: any): string | null {
+  return schemaErrors.value[row.id] ?? null
+}
+
+function setSchema(row: any, value: string) {
+  schemaTexts.value[row.id] = value
+  if (value.trim() === '') {
+    schemaErrors.value[row.id] = null
+    return
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch (e: any) {
+    schemaErrors.value[row.id] = `JSON 格式错误：${e.message}`
+    return
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    schemaErrors.value[row.id] = 'JSON Schema 顶层必须是对象，不能是数组或标量'
+    return
+  }
+  schemaErrors.value[row.id] = null
+  row.condition.json_schema = parsed
 }
 
 function allowedText(row: any) {
@@ -122,6 +164,7 @@ function setAllowed(row: any, value: string) {
           <el-option label="正则匹配" value="matches_pattern" />
           <el-option label="属于集合" value="one_of" />
           <el-option label="字段不存在" value="must_be_missing" />
+          <el-option label="JSON Schema 校验" value="matches_json_schema" />
         </el-select>
         <el-input
           v-if="row.condition.kind === 'equals'"
@@ -141,6 +184,30 @@ function setAllowed(row: any, value: string) {
         </template>
         <el-input v-else-if="row.condition.kind === 'matches_pattern'" v-model="row.condition.pattern" :disabled="disabled" placeholder="正则表达式" />
         <el-input v-else-if="row.condition.kind === 'one_of'" :model-value="allowedText(row)" :disabled="disabled" placeholder="允许值，逗号分隔" @input="setAllowed(row, $event)" />
+        <div v-else-if="row.condition.kind === 'matches_json_schema'" class="schema-field">
+          <el-input
+            type="textarea"
+            :rows="3"
+            :model-value="schemaText(row)"
+            :disabled="disabled"
+            :data-testid="`expectation-schema-${index}`"
+            placeholder='输入 JSON Schema 对象，如 {"type":"object","required":["id"]}'
+            @input="setSchema(row, $event)"
+          />
+          <div v-if="schemaError(row)" class="schema-error" style="color: var(--el-color-danger); font-size: 12px; margin-top: 4px;">{{ schemaError(row) }}</div>
+          <el-select
+            :model-value="row.condition.instance_mode ?? 'structured'"
+            :disabled="disabled"
+            :data-testid="`expectation-instance-mode-${index}`"
+            @update:model-value="row.condition.instance_mode = $event"
+          >
+            <el-option label="直接校验值 (structured)" value="structured" />
+            <el-option label="解析 JSON 文本后校验 (json_text)" value="json_text" />
+          </el-select>
+        </div>
+        <div v-else class="expectation-unknown" style="font-size: 12px; color: var(--el-color-info);">
+          <small>未知条件类型：{{ row.condition.kind }}</small>
+        </div>
       </div>
     </div>
     <el-empty v-if="!rows.length" description="暂无字段、状态或输出期望" :image-size="58" />
