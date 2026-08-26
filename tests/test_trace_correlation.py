@@ -105,56 +105,19 @@ def test_gen_ai_tool_name_maps_to_tool():
 # -- Degraded fallback (#14) --
 
 
-def test_trace_timeout_yields_degraded_trace_and_warning(tmp_path):
+def test_trace_timeout_fails_run_without_evaluation(tmp_path):
     repo = SQLiteRepository(tmp_path / "degraded.db")
     engine = RunEngine(repo)
     snapshot = _http_snapshot()
     dataset = _minimal_dataset()
-    run = engine.run(
-        dataset, snapshot, _NoTraceAdapter(),
-        EVALUATORS, trace_wait_seconds=0.1, trace_poll_interval_seconds=0.05,
-    )
-    assert run.status == "completed"
-    assert any("trace_timeout" in w for w in run.trace_warnings)
-    trace = repo.get_trace(run.id, "c1")
-    assert trace is not None
-    assert len(trace.spans) == 0
-    assert trace.final_output == {"message": "degraded"}
-
-
-def test_degraded_trace_output_evaluators_ran(tmp_path):
-    repo = SQLiteRepository(tmp_path / "degraded2.db")
-    engine = RunEngine(repo)
-    snapshot = _http_snapshot()
-    dataset = _minimal_dataset()
-    run = engine.run(
-        dataset, snapshot, _NoTraceAdapter(),
-        EVALUATORS, trace_wait_seconds=0.1, trace_poll_interval_seconds=0.05,
-    )
-    results = repo.list_results(run.id)
-    assert len(results) > 0
-    output_eval = next((r for r in results if r.evaluator_id == "final-output"), None)
-    assert output_eval is not None
-
-
-def test_degraded_trace_span_dependent_evaluator_reports_na(tmp_path):
-    repo = SQLiteRepository(tmp_path / "degraded-na.db")
-    engine = RunEngine(repo)
-    snapshot = _http_snapshot()
-    dataset = _dataset_with_tool_expectation()
-    run = engine.run(
-        dataset, snapshot, _NoTraceAdapter(),
-        EVALUATORS, trace_wait_seconds=0.1, trace_poll_interval_seconds=0.05,
-    )
-    assert run.status == "completed"
-    results = repo.list_results(run.id)
-    tool_args = next(
-        (r for r in results if r.evaluator_id == "tool-arguments"), None
-    )
-    assert tool_args is not None
-    # degraded trace has spans=(); tool-arguments evaluator finds no tool spans
-    # → observation.values is empty → check outcome is N/A (§4 Q3).
-    assert tool_args.outcome == "not_applicable"
+    with pytest.raises(TargetIntegrationError, match="trace_timeout"):
+        engine.run(
+            dataset, snapshot, _NoTraceAdapter(), EVALUATORS,
+            trace_wait_seconds=0.1, trace_poll_interval_seconds=0.05,
+        )
+    run = repo.list_runs()[0]
+    assert run.status == "failed"
+    assert repo.list_results(run.id) == []
 
 
 # -- Invocation errors stop evaluation, never Agent FAIL (#15) --

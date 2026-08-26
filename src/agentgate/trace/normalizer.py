@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 from collections.abc import Callable
 from typing import Any
@@ -19,6 +20,10 @@ _ALIASES = {
     "agentgate.case.id": ("agentgate.case_id",),
     "agentgate.turn.id": ("turn_id",),
     "agentgate.span.kind": ("agentgate.kind",),
+    "agentgate.final.output": ("agentgate.final_output.json",),
+    "agentgate.final.state": ("agentgate.final_state.json",),
+    "agentgate.trace.complete": (),
+    "agentgate.turn.complete": (),
 }
 _OPENINFERENCE_KIND_MAP = {
     "LLM": SpanKind.AGENT, "AGENT": SpanKind.AGENT, "CHAIN": SpanKind.AGENT,
@@ -94,7 +99,10 @@ def attributes(
 def _canonicalize(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw)
     for canonical, aliases in _ALIASES.items():
-        candidates = [(key, raw[key]) for key in (canonical, *aliases) if key in raw]
+        candidates = [
+            (key, _compatibility_value(canonical, key, raw[key]))
+            for key in (canonical, *aliases) if key in raw
+        ]
         if len({canonical_json(value) for _, value in candidates}) > 1:
             raise ValueError(f"conflicting correlation attributes for {canonical}")
         if candidates:
@@ -102,6 +110,21 @@ def _canonicalize(raw: dict[str, Any]) -> dict[str, Any]:
         for alias in aliases:
             normalized.pop(alias, None)
     return normalized
+
+
+def _compatibility_value(canonical: str, source_key: str, value: Any) -> Any:
+    """Normalize legacy terminal fields emitted by existing Agent SDKs."""
+    if canonical in ("agentgate.trace.complete", "agentgate.turn.complete"):
+        if isinstance(value, str) and value.lower() in ("true", "false"):
+            return value.lower() == "true"
+    if source_key in ("agentgate.final_output.json", "agentgate.final_state.json"):
+        if not isinstance(value, str):
+            raise ValueError(f"{source_key} must be a JSON string")
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{source_key} contains invalid JSON") from exc
+    return value
 
 
 def _required_string(attrs: dict[str, Any], key: str) -> str:

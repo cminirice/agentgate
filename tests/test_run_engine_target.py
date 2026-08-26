@@ -112,11 +112,16 @@ def test_http_end_to_end_with_fake_agent(tmp_path):
     assert run.status == "completed"
     trace = repo.get_trace(run.id, "c1")
     assert trace is not None
-    assert len(trace.spans) == 2
+    assert len(trace.spans) == 3
     kinds = {span.kind for span in trace.spans}
     assert "agent" in kinds
     assert "tool" in kinds
+    assert trace.status == "complete"
+    assert trace.turns[0].completed is True
     assert trace.final_output == {"message": "processed", "status": "approved"}
+    assert trace.final_state == {"approved": True, "status": "approved"}
+    assert repo.list_results(run.id)
+    assert repo.get_latest_evaluated_trace(run.id, "c1") is not None
 
 
 def test_http_adapter_sends_traceparent_and_correlates(tmp_path):
@@ -142,3 +147,32 @@ def test_http_adapter_sends_traceparent_and_correlates(tmp_path):
     assert trace is not None
     assert trace.run_id == run.id
     assert trace.case_id == "c1"
+
+
+def test_http_agent_merges_many_out_of_order_batched_spans_before_evaluation(
+    tmp_path,
+):
+    repo = SQLiteRepository(tmp_path / "many-spans.db")
+    engine = RunEngine(repo)
+    dataset = _minimal_dataset()
+
+    with FakeHttpAgent(
+        repository=repo, behavior="success", extra_span_count=500,
+        export_batch_size=73, include_duplicate=True,
+    ) as agent:
+        snapshot = _http_snapshot(endpoint=agent.endpoint)
+        run = engine.run(
+            dataset, snapshot, HttpTargetAdapter(agent.endpoint), EVALUATORS,
+            trace_wait_seconds=10.0, trace_poll_interval_seconds=0.05,
+        )
+
+    trace = repo.get_trace(run.id, "c1")
+    assert run.status == "completed"
+    assert agent.status_before_terminal == "collecting"
+    assert trace is not None and trace.status == "complete"
+    assert len(trace.spans) == 503
+    assert sum(report.accepted_spans for report in agent.export_reports) == 503
+    assert sum(report.duplicate_spans for report in agent.export_reports) == 1
+    assert trace.turns[0].completed is True
+    assert repo.list_results(run.id)
+    assert repo.get_latest_evaluated_trace(run.id, "c1") == trace

@@ -20,12 +20,11 @@ from agentgate.domain import (
     TargetSnapshot,
     Trace,
     TraceStatus,
-    TraceTurn,
     freeze_json,
 )
 from agentgate.evaluator import EVALUATORS, evaluate_case, validate_evaluation_plan
 from agentgate.result.service import build_report
-from agentgate.run.targets.base import TargetExecutionAdapter
+from agentgate.run.targets.base import TargetExecutionAdapter, TargetIntegrationError
 from agentgate.storage.base import AgentGateRepository
 
 LOGGER = logging.getLogger(__name__)
@@ -92,8 +91,8 @@ class RunEngine:
             for case in cases:
                 result = self._invoke_case(run.id, case, target_snapshot, adapter)
                 trace = self._resolve_trace(
-                    run.id, case, result, trace_wait_seconds, trace_poll_interval_seconds,
-                    trace_warnings,
+                    run.id, case, result, trace_wait_seconds,
+                    trace_poll_interval_seconds,
                 )
                 self.repository.save_trace(trace)
                 if trace.status != TraceStatus.COMPLETE:
@@ -156,76 +155,32 @@ class RunEngine:
         return adapter.execute(request)
 
     def _resolve_trace(
-        self, run_id, case, result, trace_wait_seconds, poll_interval, trace_warnings
+        self, run_id, case, result, trace_wait_seconds, poll_interval
     ) -> Trace:
         if result.inline_trace is not None:
             return result.inline_trace
         deadline = time.monotonic() + trace_wait_seconds
+        last_status = "missing"
         while time.monotonic() < deadline:
             trace = self.repository.get_trace(run_id, case.id)
             if trace is not None:
-                return _enrich_trace(trace, result, case)
+                last_status = trace.status.value
+                if trace.status in (
+                    TraceStatus.COMPLETE,
+                    TraceStatus.CONFLICTED,
+                    TraceStatus.INCOMPLETE,
+                ):
+                    return trace
             time.sleep(poll_interval)
-        warning = f"trace_timeout: case {case.id} (trace_id={result.trace_id})"
-        LOGGER.warning(warning)
-        trace_warnings.append(warning)
-        return _degraded_trace(run_id, case.id, result)
+        message = (
+            f"case {case.id} did not produce a complete trace within "
+            f"{trace_wait_seconds}s (trace_id={result.trace_id}, status={last_status})"
+        )
+        LOGGER.warning("trace_timeout: %s", message)
+        raise TargetIntegrationError.trace_timeout(message)
 
     def report(self, run_id: str):
         run = self.repository.get_run(run_id)
         if run is None:
             return None
         return build_report(run, self.repository.list_results(run_id))
-
-
-def _degraded_trace(run_id: str, case_id: str, result) -> Trace:
-    output = result.output
-    if output is None:
-        output = {}
-    elif not isinstance(output, dict) and not hasattr(output, "items"):
-        output = {"value": output}
-    return Trace(
-        run_id=run_id,
-        case_id=case_id,
-        spans=(),
-        turns=(),
-        final_output=freeze_json(output),
-        final_state=result.final_state,
-    )
-
-
-def _enrich_trace(trace: Trace, result, case) -> Trace:
-    # OTLP path: the normalizer produces spans but cannot know execution-derived
-    # final_output/final_state. RunEngine fills these from the adapter result
-    # (orchestration enrichment, not normalization — invariant #4 preserved).
-    output = result.output
-    if output is None:
-        output = {}
-    elif not isinstance(output, dict) and not hasattr(output, "items"):
-        output = {"value": output}
-    turns = tuple(
-        TraceTurn(
-            turn_id=turn.id,
-            turn_index=index,
-            input=turn.input,
-            output_present=index == len(case.turns) - 1,
-            output=output if index == len(case.turns) - 1 else None,
-            state_present=index == len(case.turns) - 1,
-            state=result.final_state if index == len(case.turns) - 1 else {},
-            invocation_ids=(result.invocation_id,),
-            completed=True,
-        )
-        for index, turn in enumerate(case.turns)
-    )
-    payload = trace.model_dump(mode="python")
-    payload.update({
-        "status": TraceStatus.COMPLETE,
-        "turns": turns,
-        "final_output_present": True,
-        "final_output": freeze_json(output),
-        "final_state_present": True,
-        "final_state": result.final_state if result.final_state else trace.final_state,
-        "completed_at": result.completed_at,
-        "content_sha256": "",
-    })
-    return Trace.model_validate(payload)
