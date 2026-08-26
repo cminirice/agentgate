@@ -52,6 +52,11 @@ const groupedVersions = computed(() => {
   return Object.values(groups)
 })
 
+function agentLabel(target: Run['snapshot']['target']): string {
+  const name = target.display_name || target.ref.external_target_id
+  return `${name} · ${target.ref.external_version_id}`
+}
+
 async function refresh() {
   const [summary, targetVersions, datasetOptions, evaluatorOptions, recentRuns] = await Promise.all([
     api.overview(), api.versions(), api.datasets(), api.evaluators(), api.runs(),
@@ -224,7 +229,7 @@ onUnmounted(() => window.removeEventListener('popstate', onPopState))
 
       <section id="result-report" class="region report-region" aria-labelledby="report-title">
         <div class="region-heading report-heading">
-          <div><span class="step">02 · RESULT REPORT</span><h2 id="report-title">结果报告</h2><p v-if="report">{{ report.run.snapshot.target.ref.external_version_id }} · {{ report.run.snapshot.dataset.dataset_name }} v{{ report.run.snapshot.dataset.version }}</p><p v-else>运行评估后在此查看指标、失败证据和轨迹。</p></div>
+          <div><span class="step">02 · RESULT REPORT</span><h2 id="report-title">结果报告</h2><p v-if="report">{{ agentLabel(report.run.snapshot.target) }} · {{ report.run.snapshot.dataset.dataset_name }} v{{ report.run.snapshot.dataset.version }}</p><p v-else>运行评估后在此查看指标、失败证据和轨迹。</p></div>
           <el-tag v-if="report" :type="report.gate.outcome === 'pass' ? 'success' : 'danger'" effect="dark" size="large">{{ report.gate.outcome === 'pass' ? '发布门槛通过' : '发布门槛未通过' }}</el-tag>
         </div>
 
@@ -264,7 +269,7 @@ onUnmounted(() => window.removeEventListener('popstate', onPopState))
             <article class="report-panel">
               <div class="panel-title"><h3>最近运行</h3><span>{{ runs.length }} 条</span></div>
               <el-table :data="runs" empty-text="暂无运行" size="small">
-                <el-table-column label="Agent" min-width="190"><template #default="scope">{{ scope.row.snapshot.target.ref.external_version_id }}</template></el-table-column>
+                <el-table-column label="Agent" min-width="190"><template #default="scope">{{ agentLabel(scope.row.snapshot.target) }}</template></el-table-column>
                 <el-table-column prop="status" label="状态" width="95" />
                 <el-table-column label="操作" width="70"><template #default="scope"><el-button link type="primary" @click="openRun(scope.row.id)">查看</el-button></template></el-table-column>
               </el-table>
@@ -291,7 +296,7 @@ onUnmounted(() => window.removeEventListener('popstate', onPopState))
       <template v-if="report">
         <p><b>Case：</b>{{ caseNames[rerunCaseId] }}</p>
         <p><b>固定Dataset：</b>{{ report.run.snapshot.dataset.dataset_name }} v{{ report.run.snapshot.dataset.version }}</p>
-        <p><b>原Agent版本：</b>{{ report.run.snapshot.target.ref.external_version_id }}</p>
+        <p><b>原Agent版本：</b>{{ agentLabel(report.run.snapshot.target) }}</p>
         <el-form label-position="top"><el-form-item label="重跑Agent版本"><el-select v-model="rerunVersion" data-testid="rerun-version-select" style="width: 100%"><el-option-group v-for="group in groupedVersions" :key="group.label" :label="group.label"><el-option v-for="item in group.items" :key="item.id" :label="`${item.label} · ${item.id}${item.is_latest ? '（最新）' : ''}`" :value="item.id" /></el-option-group></el-select></el-form-item></el-form>
         <el-alert type="info" :closable="false" show-icon title="Case、评估器、Metric和Gate均复用原Run配置。" />
       </template>
