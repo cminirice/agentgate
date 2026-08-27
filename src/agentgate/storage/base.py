@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import ContextManager, Protocol
 
 from agentgate.domain import Dataset, DatasetVersion, Result, Run, Trace
 from agentgate.trace.models import IngestionReport, TraceBatch
@@ -20,6 +20,7 @@ class PendingTraceCorrelation:
 
 
 class AgentGateRepository(Protocol):
+    def transaction(self) -> ContextManager[None]: ...
     def save_dataset(self, dataset: Dataset) -> None: ...
     def save_dataset_with_draft(
         self, dataset: Dataset, draft: DatasetVersion

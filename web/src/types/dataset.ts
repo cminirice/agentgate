@@ -131,3 +131,10 @@ export interface SchemaIssue {
 export type SchemaValidationResult =
   | { valid: true }
   | { valid: false; errors: SchemaIssue[] }
+
+export interface ExcelImportIssue {
+  sheet: string
+  row: number | null
+  column: string | null
+  message: string
+}

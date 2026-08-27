@@ -5,11 +5,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from agentgate.domain import Case, Dataset, DatasetPurpose, DatasetVersion
+from agentgate.domain import (
+    Case, Dataset, DatasetPurpose, DatasetVersion, DatasetVersionStatus,
+)
 from agentgate.storage.base import AgentGateRepository
 
 from .import_export import DatasetExport, build_export, parse_export
-from .validation import validate_dataset_version
+from .excel_import_export import (
+    DatasetExcelValidationError,
+    build_excel,
+    excel_issues_from_dataset_validation,
+    parse_excel,
+)
+from .validation import DatasetValidationError, validate_dataset_version
 
 
 def utcnow() -> datetime:
@@ -208,6 +216,36 @@ class DatasetService:
 
     def export_version(self, dataset_id: str, version: int) -> DatasetExport:
         return build_export(self.get_dataset(dataset_id), self.get_version(dataset_id, version))
+
+    def import_excel(
+        self, content: bytes, name: str, description: str = ""
+    ) -> tuple[Dataset, DatasetVersion]:
+        cases = parse_excel(content)
+        if not name.strip():
+            raise ValueError("dataset name is required")
+        dataset = Dataset(name=name.strip(), description=description.strip())
+        draft = DatasetVersion(
+            dataset_id=dataset.id,
+            dataset_name=dataset.name,
+            dataset_description=dataset.description,
+            cases=cases,
+        )
+        try:
+            validate_dataset_version(draft)
+        except DatasetValidationError as exc:
+            raise DatasetExcelValidationError(
+                excel_issues_from_dataset_validation(exc.issues, draft.cases)
+            ) from exc
+        with self.repository.transaction():
+            self.repository.save_dataset(dataset)
+            self.repository.save_dataset_version(draft)
+        return dataset, draft
+
+    def export_excel(self, dataset_id: str, version: int) -> bytes:
+        item = self.get_version(dataset_id, version)
+        if item.status != DatasetVersionStatus.PUBLISHED:
+            raise ValueError("only published dataset versions can be exported as Excel")
+        return build_excel(item)
 
     def import_dataset(self, payload: dict | str) -> tuple[Dataset, DatasetVersion]:
         exported = parse_export(payload)
