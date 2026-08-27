@@ -81,6 +81,18 @@ def _stored_record_counts(client: TestClient) -> tuple[int, int]:
         )
 
 
+def _excel_error(response) -> dict:
+    detail = response.json()["detail"]
+    assert set(detail) == {"code", "total_count", "truncated", "issues"}
+    assert detail["total_count"] >= len(detail["issues"])
+    assert detail["truncated"] == (detail["total_count"] > len(detail["issues"]))
+    return detail
+
+
+def _excel_issues(response) -> list[dict]:
+    return _excel_error(response)["issues"]
+
+
 def test_excel_import_creates_draft_and_published_export_downloads(tmp_path):
     case = Case(
         id="imported-case",
@@ -124,11 +136,27 @@ def test_excel_import_creates_draft_and_published_export_downloads(tmp_path):
 
         assert downloaded.status_code == 200
         assert downloaded.headers["content-type"] == XLSX_MEDIA_TYPE
-        assert downloaded.headers["content-disposition"] == (
-            'attachment; filename="Imported-Excel-v1.xlsx"'
+        assert downloaded.headers["content-disposition"].startswith(
+            'attachment; filename="Imported-Excel-v1.xlsx"; filename*=UTF-8\'\''
         )
+        assert downloaded.headers["etag"]
+        assert downloaded.headers["cache-control"] == "private, immutable"
         sheet = openpyxl.load_workbook(BytesIO(downloaded.content), read_only=True)["Cases"]
         assert next(sheet.iter_rows(min_row=2, values_only=True))[0] == "imported-case"
+
+
+def test_excel_template_download_contains_instructions_and_empty_cases_sheet(tmp_path):
+    with TestClient(create_app(tmp_path / "excel-template-api.db")) as client:
+        response = client.get("/api/datasets/excel/template")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == XLSX_MEDIA_TYPE
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="agentgate-dataset-template.xlsx"'
+    )
+    workbook = openpyxl.load_workbook(BytesIO(response.content), read_only=True)
+    assert workbook.sheetnames == ["Cases", "Instructions", "Metadata"]
+    assert list(workbook["Cases"].iter_rows(min_row=2, values_only=True)) == []
 
 
 def test_excel_export_rejects_a_draft_without_a_published_version(tmp_path):
@@ -179,8 +207,8 @@ def test_excel_import_rejects_a_non_xlsx_filename_with_structured_issue(tmp_path
             files={"file": ("import.csv", b"not a spreadsheet", "text/csv")},
         )
 
-        assert response.status_code == 422
-        assert response.json()["detail"] == [{
+        assert response.status_code == 415
+        assert _excel_issues(response) == [{
             "sheet": "Cases",
             "row": None,
             "column": None,
@@ -204,8 +232,8 @@ def test_excel_import_rejects_bodies_over_ten_mebibytes_before_creating_a_datase
             },
         )
 
-        assert response.status_code == 422
-        assert response.json()["detail"][0]["message"] == "XLSX upload exceeds 10 MiB"
+        assert response.status_code == 413
+        assert _excel_issues(response)[0]["message"] == "XLSX upload exceeds 10 MiB"
         assert _dataset_ids(client) == before
 
 
@@ -269,8 +297,8 @@ def test_excel_import_rejects_oversized_content_length_before_upload_parsing(
             content=b"unused",
         )
 
-        assert response.status_code == 422
-        assert response.json()["detail"][0]["message"] == (
+        assert response.status_code == 413
+        assert _excel_issues(response)[0]["message"] == (
             "multipart request body exceeds 11 MiB"
         )
         assert read_sizes == []
@@ -306,11 +334,12 @@ def test_excel_import_rejects_a_streamed_request_body_above_the_envelope_limit(t
 
     asyncio.run(app(scope, receive, send))
 
-    assert next(item for item in sent if item["type"] == "http.response.start")["status"] == 422
+    assert next(item for item in sent if item["type"] == "http.response.start")["status"] == 413
     response_body = b"".join(
         item.get("body", b"") for item in sent if item["type"] == "http.response.body"
     )
-    assert json.loads(response_body)["detail"][0]["message"] == (
+    detail = json.loads(response_body)["detail"]
+    assert detail["issues"][0]["message"] == (
         "multipart request body exceeds 11 MiB"
     )
 
@@ -365,7 +394,7 @@ def test_excel_import_returns_all_malformed_workbook_issues_and_creates_no_datas
         )
 
         assert response.status_code == 422
-        issues = response.json()["detail"]
+        issues = _excel_issues(response)
         assert {issue["column"] for issue in issues} >= {
             "tags_json", "input_json", "expectations_json",
         }
@@ -385,7 +414,7 @@ def test_excel_import_normalizes_an_empty_zip_package_to_structured_422(tmp_path
         )
 
         assert response.status_code == 422
-        assert response.json()["detail"][0] == {
+        assert _excel_issues(response)[0] == {
             "sheet": "Cases",
             "row": None,
             "column": None,
@@ -412,7 +441,7 @@ def test_excel_import_normalizes_a_package_missing_a_critical_part_to_422(tmp_pa
         )
 
         assert response.status_code == 422
-        assert response.json()["detail"][0] == {
+        assert _excel_issues(response)[0] == {
             "sheet": "Cases",
             "row": None,
             "column": None,
@@ -433,7 +462,7 @@ def test_excel_import_api_rejects_an_archive_compression_bomb(tmp_path):
         )
 
         assert response.status_code == 422
-        assert "compression ratio" in response.json()["detail"][0]["message"]
+        assert "compression ratio" in _excel_issues(response)[0]["message"]
         assert _stored_record_counts(client) == before
 
 
@@ -461,7 +490,7 @@ def test_excel_import_api_returns_structured_full_validation_issues_without_savi
         )
 
         assert response.status_code == 422
-        issues = response.json()["detail"]
+        issues = _excel_issues(response)
         assert {(item["row"], item["column"]) for item in issues} == {
             (2, "input_json"),
             (2, "required_tools_json"),
@@ -487,7 +516,7 @@ def test_excel_import_api_rejects_header_only_workbook_without_saving(tmp_path):
         )
 
         assert response.status_code == 422
-        assert response.json()["detail"] == [{
+        assert _excel_issues(response) == [{
             "sheet": "Cases",
             "row": None,
             "column": None,
@@ -516,7 +545,7 @@ def test_excel_import_api_rejects_formula_cells_with_structured_issue(tmp_path):
         )
 
         assert response.status_code == 422
-        assert response.json()["detail"] == [{
+        assert _excel_issues(response) == [{
             "sheet": "Cases",
             "row": 2,
             "column": "input_json",
@@ -548,7 +577,7 @@ def test_excel_export_api_returns_structured_422_for_unrepresentable_cells(tmp_p
         )
 
         assert response.status_code == 422
-        assert response.json()["detail"] == [{
+        assert _excel_issues(response) == [{
             "sheet": "Cases",
             "row": 2,
             "column": "case_name",

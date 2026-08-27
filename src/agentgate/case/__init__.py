@@ -7,6 +7,7 @@ from .excel_import_export import (
     ExcelExportIssue,
     ExcelImportIssue,
     build_excel,
+    build_excel_template,
     parse_excel,
 )
 from .service import DatasetService
@@ -15,5 +16,6 @@ from .validation import DatasetValidationError, ValidationIssue, validate_datase
 __all__ = [
     "DatasetExcelExportError", "DatasetExcelValidationError", "DatasetExport", "DatasetService",
     "DatasetValidationError", "ExcelExportIssue", "ExcelImportIssue", "ValidationIssue",
-    "build_excel", "build_export", "parse_excel", "parse_export", "validate_dataset_version",
+    "build_excel", "build_excel_template", "build_export", "parse_excel", "parse_export",
+    "validate_dataset_version",
 ]

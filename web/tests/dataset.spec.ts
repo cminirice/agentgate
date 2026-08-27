@@ -137,6 +137,16 @@ test('only exposes Excel export for a published Dataset version', async ({ page 
   await expect(page.getByTestId('export-excel')).toBeVisible()
 })
 
+test('downloads the documented Excel import template', async ({ page }) => {
+  await page.goto('/datasets')
+
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByTestId('download-excel-template').click()
+  const download = await downloadPromise
+
+  expect(download.suggestedFilename()).toBe('agentgate-dataset-template.xlsx')
+})
+
 test('imports an exported Excel dataset as a publishable draft', async ({ page }) => {
   await page.goto('/datasets')
   const workbook = await exportedWorkbook(page, uniqueDatasetName('Excel 源测评集'))

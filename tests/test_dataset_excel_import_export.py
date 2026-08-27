@@ -11,6 +11,7 @@ from agentgate.case.excel_import_export import (
     DatasetExcelValidationError,
     ExcelImportIssue,
     build_excel,
+    build_excel_template,
     parse_excel,
 )
 from agentgate.case import DatasetService
@@ -36,6 +37,10 @@ HEADERS = (
     "expected_skill", "expectations_json", "required_tools_json", "forbidden_tools_json",
     "policy_rules_json", "turn_notes",
 )
+
+
+def test_excel_runtime_uses_defused_xml_parser():
+    assert openpyxl.DEFUSEDXML
 
 
 def published_version_with_all_fields() -> DatasetVersion:
@@ -104,13 +109,33 @@ def test_excel_round_trip_preserves_multiturn_case_and_ids():
 
     workbook = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
     sheet = workbook["Cases"]
-    assert workbook.sheetnames == ["Cases"]
+    assert workbook.sheetnames == ["Cases", "Instructions", "Metadata"]
     assert tuple(next(sheet.iter_rows(values_only=True))) == HEADERS
     rows = list(sheet.iter_rows(min_row=2, values_only=True))
     assert [row[0] for row in rows] == ["case-001", "case-001"]
     assert [row[7] for row in rows] == ["turn-001", "turn-002"]
     assert [row[8] for row in rows] == [1, 2]
     assert parse_excel(content) == version.cases
+
+
+def test_excel_template_explains_human_readable_multiturn_grouping():
+    workbook = openpyxl.load_workbook(
+        BytesIO(build_excel_template()), read_only=True, data_only=True
+    )
+
+    assert workbook.sheetnames == ["Cases", "Instructions", "Metadata"]
+    assert tuple(next(workbook["Cases"].iter_rows(values_only=True))) == HEADERS
+    instructions = "\n".join(
+        str(value)
+        for row in workbook["Instructions"].iter_rows(values_only=True)
+        for value in row
+        if value
+    )
+    assert "loan-001" in instructions
+    assert "不需要填写 UUID" in instructions
+    metadata = dict(workbook["Metadata"].iter_rows(values_only=True))
+    assert metadata["format"] == "agentgate.dataset.xlsx"
+    assert metadata["format_version"] == "1"
 
 
 def test_excel_export_keeps_formula_like_text_literal_and_lossless():
@@ -236,6 +261,27 @@ def test_excel_infers_all_blank_multiturn_orders_from_row_order():
     )))
 
     assert [turn.id for turn in cases[0].turns] == ["first", "second"]
+
+
+def test_excel_rejects_ambiguous_repeated_anonymous_case_names():
+    issues = _issues(_workbook_bytes((
+        _valid_row(case_id=None, case_name="Loan", turn_id=None, turn_order=None),
+        _valid_row(case_id=None, case_name="Loan", turn_id=None, turn_order=None),
+    )))
+
+    assert (3, "case_id", "repeated case_name requires a case_id for multi-turn grouping") in {
+        (issue.row, issue.column, issue.message) for issue in issues
+    }
+
+
+def test_excel_rejects_anonymous_row_with_multiturn_order():
+    issues = _issues(_workbook_bytes((
+        _valid_row(case_id=None, turn_id=None, turn_order=2),
+    )))
+
+    assert (2, "case_id", "case_id is required when turn_order is greater than 1") in {
+        (issue.row, issue.column, issue.message) for issue in issues
+    }
 
 
 def test_excel_ignores_completely_blank_rows():
@@ -447,6 +493,51 @@ def test_excel_rejects_an_archive_entry_with_an_extreme_compression_ratio():
     assert any("compression ratio" in issue.message for issue in issues)
 
 
+def test_excel_rejects_an_archive_with_too_many_entries(monkeypatch):
+    monkeypatch.setattr(excel_codec, "MAX_XLSX_ENTRIES", 2)
+    content = _zip_bytes((
+        ("[Content_Types].xml", b"types"),
+        ("xl/workbook.xml", b"workbook"),
+        ("xl/worksheets/sheet1.xml", b"sheet"),
+    ), ZIP_STORED)
+
+    issues = _issues(content)
+
+    assert any("archive entry count" in issue.message for issue in issues)
+
+
+def test_excel_rejects_external_links_and_embedded_active_content():
+    content = BytesIO()
+    with ZipFile(BytesIO(_workbook_bytes()), "r") as source, ZipFile(
+        content, "w", ZIP_DEFLATED
+    ) as target:
+        for member in source.infolist():
+            target.writestr(member, source.read(member.filename))
+        target.writestr("xl/externalLinks/externalLink1.xml", b"<externalLink/>")
+        target.writestr("xl/embeddings/oleObject1.bin", b"embedded")
+
+    issues = _issues(content.getvalue())
+
+    assert any("external links" in issue.message for issue in issues)
+    assert any("embedded objects" in issue.message for issue in issues)
+
+
+def test_excel_bounds_retained_import_issues(monkeypatch):
+    monkeypatch.setattr(excel_codec, "MAX_IMPORT_ISSUES", 2)
+    content = _workbook_bytes((
+        _valid_row(case_id="case-1", input_json="{"),
+        _valid_row(case_id="case-2", turn_id="turn-2", input_json="{"),
+        _valid_row(case_id="case-3", turn_id="turn-3", input_json="{"),
+    ))
+
+    with pytest.raises(DatasetExcelValidationError) as error:
+        parse_excel(content)
+
+    assert len(error.value.issues) == 2
+    assert error.value.total_count >= 3
+    assert error.value.truncated
+
+
 def test_excel_wraps_lazy_worksheet_xml_errors_as_import_issues():
     issues = _issues(_corrupt_cases_xml(_workbook_bytes()))
 
@@ -624,6 +715,35 @@ def test_service_import_excel_maps_duplicate_expectation_ids_to_expectations_cel
         "Cases", 3, "expectations_json",
     )
     assert issue.message == "同一用例内期望 ID 必须唯一"
+    assert _repository_record_counts(repository) == (0, 0)
+
+
+def test_service_import_excel_uses_original_rows_after_case_and_turn_reordering(tmp_path):
+    repository = SQLiteRepository(tmp_path / "source-rows.db")
+    service = DatasetService(repository)
+
+    with pytest.raises(DatasetExcelValidationError) as error:
+        service.import_excel(
+            _workbook_bytes((
+                _valid_row(
+                    case_id="case-a", case_name="A", turn_id="a-2", turn_order=2,
+                ),
+                _valid_row(
+                    case_id="case-b", case_name="B", turn_id="b-1", turn_order=1,
+                    input_json="{}",
+                ),
+                _valid_row(
+                    case_id="case-a", case_name="A", turn_id="a-1", turn_order=1,
+                    input_json="{}",
+                ),
+            )),
+            "Source rows",
+        )
+
+    empty_input_rows = {
+        issue.row for issue in error.value.issues if issue.message == "每一轮必须包含输入"
+    }
+    assert empty_input_rows == {3, 4}
     assert _repository_record_counts(repository) == (0, 0)
 
 

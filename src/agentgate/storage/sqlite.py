@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from contextlib import contextmanager
-from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 from uuid import uuid4
 
 from agentgate.domain import (
@@ -25,9 +23,6 @@ class SQLiteRepository:
 
     def __init__(self, path: str | Path = "agentgate.db") -> None:
         self.path = str(path)
-        self._transaction_connection: ContextVar[sqlite3.Connection | None] = ContextVar(
-            "transaction_connection", default=None
-        )
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -160,33 +155,12 @@ class SQLiteRepository:
                 """
             )
 
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        transaction_connection = self._transaction_connection.get()
-        if transaction_connection is not None:
-            yield transaction_connection
-            return
-        with self._connect() as connection:
-            yield connection
-
-    @contextmanager
-    def transaction(self) -> Iterator[None]:
-        if self._transaction_connection.get() is not None:
-            yield
-            return
-        with self._connect() as connection:
-            token = self._transaction_connection.set(connection)
-            try:
-                yield
-            finally:
-                self._transaction_connection.reset(token)
-
     @staticmethod
     def _json(model: Any) -> str:
         return canonical_json(model)
 
     def save_dataset(self, dataset: Dataset) -> None:
-        with self._connection() as db:
+        with self._connect() as db:
             db.execute(
                 """
                 INSERT INTO datasets(id,name,archived,updated_at,payload)
@@ -250,7 +224,7 @@ class SQLiteRepository:
         return [Dataset.model_validate_json(row[0]) for row in rows]
 
     def save_dataset_version(self, version: DatasetVersion) -> None:
-        with self._connection() as db:
+        with self._connect() as db:
             existing = db.execute(
                 "SELECT payload FROM dataset_versions WHERE id=?", (version.id,)
             ).fetchone()

@@ -138,3 +138,10 @@ export interface ExcelImportIssue {
   column: string | null
   message: string
 }
+
+export interface ExcelImportErrorDetail {
+  code: string
+  total_count: number
+  truncated: boolean
+  issues: ExcelImportIssue[]
+}

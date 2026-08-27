@@ -12,10 +12,10 @@ from agentgate.storage.base import AgentGateRepository
 
 from .import_export import DatasetExport, build_export, parse_export
 from .excel_import_export import (
-    DatasetExcelValidationError,
     build_excel,
+    build_excel_template,
     excel_issues_from_dataset_validation,
-    parse_excel,
+    parse_excel_document,
 )
 from .validation import DatasetValidationError, validate_dataset_version
 
@@ -220,7 +220,8 @@ class DatasetService:
     def import_excel(
         self, content: bytes, name: str, description: str = ""
     ) -> tuple[Dataset, DatasetVersion]:
-        cases = parse_excel(content)
+        parsed = parse_excel_document(content)
+        cases = parsed.cases
         if not name.strip():
             raise ValueError("dataset name is required")
         dataset = Dataset(name=name.strip(), description=description.strip())
@@ -233,12 +234,10 @@ class DatasetService:
         try:
             validate_dataset_version(draft)
         except DatasetValidationError as exc:
-            raise DatasetExcelValidationError(
-                excel_issues_from_dataset_validation(exc.issues, draft.cases)
+            raise excel_issues_from_dataset_validation(
+                exc.issues, draft.cases, parsed.source_rows
             ) from exc
-        with self.repository.transaction():
-            self.repository.save_dataset(dataset)
-            self.repository.save_dataset_version(draft)
+        self.repository.save_dataset_with_draft(dataset, draft)
         return dataset, draft
 
     def export_excel(self, dataset_id: str, version: int) -> bytes:
@@ -246,6 +245,9 @@ class DatasetService:
         if item.status != DatasetVersionStatus.PUBLISHED:
             raise ValueError("only published dataset versions can be exported as Excel")
         return build_excel(item)
+
+    def excel_template(self) -> bytes:
+        return build_excel_template()
 
     def import_dataset(self, payload: dict | str) -> tuple[Dataset, DatasetVersion]:
         exported = parse_export(payload)

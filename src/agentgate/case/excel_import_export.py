@@ -14,6 +14,7 @@ from xml.etree.ElementTree import ParseError
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell import WriteOnlyCell
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import ValidationError
 
@@ -55,6 +56,8 @@ MAX_EXCEL_CELL_CHARACTERS = 32_767
 MAX_XLSX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_XLSX_ENTRY_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 MAX_XLSX_COMPRESSION_RATIO = 200
+MAX_XLSX_ENTRIES = 2_000
+MAX_IMPORT_ISSUES = 200
 _CONTENT_TYPES_PART = "[Content_Types].xml"
 _PACKAGE_EXCEPTIONS = (
     BadZipFile,
@@ -82,12 +85,25 @@ class ExcelImportIssue:
 class DatasetExcelValidationError(ValueError):
     """All structural and model-validation errors found in an XLSX upload."""
 
-    def __init__(self, issues: tuple[ExcelImportIssue, ...]) -> None:
-        self.issues = issues
+    def __init__(
+        self,
+        issues: Iterable[ExcelImportIssue],
+        *,
+        total_count: int | None = None,
+    ) -> None:
+        retained: list[ExcelImportIssue] = []
+        discovered = 0
+        for issue in issues:
+            discovered += 1
+            if len(retained) < MAX_IMPORT_ISSUES:
+                retained.append(issue)
+        self.issues = tuple(retained)
+        self.total_count = max(discovered, total_count or 0)
+        self.truncated = self.total_count > len(self.issues)
         details = "; ".join(
             f"{issue.sheet}!{issue.column or '*'}"
             f"{f' row {issue.row}' if issue.row is not None else ''}: {issue.message}"
-            for issue in issues
+            for issue in self.issues
         )
         super().__init__(details or "Excel workbook validation failed")
 
@@ -120,9 +136,38 @@ class _Row:
     turn_order: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class ParsedExcel:
+    cases: tuple[Case, ...]
+    source_rows: tuple[tuple[int, ...], ...]
+
+
+class _IssueCollector:
+    def __init__(self) -> None:
+        self.issues: list[ExcelImportIssue] = []
+        self.total_count = 0
+
+    def append(self, issue: ExcelImportIssue) -> None:
+        self.total_count += 1
+        if len(self.issues) < MAX_IMPORT_ISSUES:
+            self.issues.append(issue)
+
+    def extend(self, issues: Iterable[ExcelImportIssue]) -> None:
+        for issue in issues:
+            self.append(issue)
+
+    def __bool__(self) -> bool:
+        return self.total_count > 0
+
+    def as_error(self) -> DatasetExcelValidationError:
+        return DatasetExcelValidationError(self.issues, total_count=self.total_count)
+
+
 def excel_issues_from_dataset_validation(
-    validation_issues: Iterable[ValidationIssue], cases: tuple[Case, ...],
-) -> tuple[ExcelImportIssue, ...]:
+    validation_issues: Iterable[ValidationIssue],
+    cases: tuple[Case, ...],
+    source_rows: tuple[tuple[int, ...], ...] | None = None,
+) -> DatasetExcelValidationError:
     """Map Dataset validation paths back to their originating workbook cells."""
     row_starts: list[int] = []
     next_row = 2
@@ -130,7 +175,7 @@ def excel_issues_from_dataset_validation(
         row_starts.append(next_row)
         next_row += len(case.turns)
 
-    issues: list[ExcelImportIssue] = []
+    issues = _IssueCollector()
     for issue in validation_issues:
         if issue.path == "cases":
             issues.append(ExcelImportIssue(SHEET_NAME, None, None, issue.message))
@@ -148,11 +193,20 @@ def excel_issues_from_dataset_validation(
         if turn_index is not None and turn_index >= len(cases[case_index].turns):
             issues.append(ExcelImportIssue(SHEET_NAME, row_starts[case_index], None, issue.message))
             continue
-        row = row_starts[case_index] + (turn_index or 0)
+        if source_rows is not None and case_index < len(source_rows):
+            case_source_rows = source_rows[case_index]
+            source_index = turn_index or 0
+            row = (
+                case_source_rows[source_index]
+                if source_index < len(case_source_rows)
+                else row_starts[case_index] + source_index
+            )
+        else:
+            row = row_starts[case_index] + (turn_index or 0)
         field = match.group("field")
         column = _dataset_validation_column(field, turn_index is not None)
         issues.append(ExcelImportIssue(SHEET_NAME, row, column, issue.message))
-    return tuple(issues)
+    return issues.as_error()
 
 
 def _dataset_validation_column(field: str | None, is_turn: bool) -> str | None:
@@ -208,14 +262,69 @@ def build_excel(version: DatasetVersion) -> bytes:
     if export_issues:
         raise DatasetExcelExportError(tuple(export_issues))
 
+    return _build_workbook(rows, version)
+
+
+def build_excel_template() -> bytes:
+    """Build an empty, documented workbook for business-user authoring."""
+    return _build_workbook([], None)
+
+
+def _build_workbook(
+    rows: list[tuple[Any, ...]], version: DatasetVersion | None,
+) -> bytes:
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet(SHEET_NAME)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:P{max(len(rows) + 1, 1)}"
+    widths = (20, 24, 28, 12, 12, 24, 32, 20, 12, 40, 20, 48, 28, 28, 32, 28)
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.append(_write_only_row(sheet, HEADERS))
     for row in rows:
         sheet.append(_write_only_row(sheet, row))
+
+    instructions = workbook.create_sheet("Instructions")
+    instructions.column_dimensions["A"].width = 26
+    instructions.column_dimensions["B"].width = 100
+    for row in _instruction_rows():
+        instructions.append(_write_only_row(instructions, row))
+
+    metadata = workbook.create_sheet("Metadata")
+    metadata.column_dimensions["A"].width = 28
+    metadata.column_dimensions["B"].width = 72
+    metadata_rows = (
+        ("format", "agentgate.dataset.xlsx"),
+        ("format_version", "1"),
+        ("source_dataset_id", version.dataset_id if version else ""),
+        ("source_dataset_version", version.version if version else ""),
+        ("content_sha256", version.content_sha256 if version else ""),
+        (
+            "exported_at",
+            (version.published_at or version.updated_at).isoformat() if version else "",
+        ),
+    )
+    for row in metadata_rows:
+        metadata.append(_write_only_row(metadata, row))
+
     content = BytesIO()
     workbook.save(content)
     return content.getvalue()
+
+
+def _instruction_rows() -> tuple[tuple[str, str], ...]:
+    return (
+        ("AgentGate Excel 导入说明", "一行代表一个 Turn；数据填写在 Cases 工作表。"),
+        ("必填列", "case_name、input_json"),
+        ("单轮用例", "case_id、turn_id、turn_order 可以留空，系统自动生成。"),
+        ("多轮用例", "每一轮填写相同 case_id，例如 loan-001；不需要填写 UUID。"),
+        ("多轮顺序", "turn_order 全部留空时按行顺序；填写时必须完整填写 1..N。"),
+        ("JSON 列", "必须填写 JSON 文本，例如 {\"message\":\"我要申请贷款\"}。"),
+        ("公式", "不允许公式、宏、外部链接或嵌入对象。"),
+        ("", ""),
+        ("多轮示例", "case_id=loan-001, turn_order=1, input_json={\"message\":\"我想贷款\"}"),
+        ("多轮示例", "case_id=loan-001, turn_order=2, input_json={\"message\":\"期限12个月\"}"),
+    )
 
 
 def _excel_export_issues(rows: list[tuple[Any, ...]]) -> list[ExcelExportIssue]:
@@ -265,6 +374,11 @@ def _write_only_row(sheet: Any, values: Iterable[Any]) -> tuple[Any, ...]:
 
 def parse_excel(content: bytes) -> tuple[Case, ...]:
     """Parse a Cases worksheet, collecting all independently discoverable issues."""
+    return parse_excel_document(content).cases
+
+
+def parse_excel_document(content: bytes) -> ParsedExcel:
+    """Parse Cases and retain original worksheet rows for later domain validation."""
     if len(content) > MAX_INPUT_BYTES:
         raise DatasetExcelValidationError((ExcelImportIssue(
             SHEET_NAME, None, None, f"input exceeds {MAX_INPUT_BYTES} byte limit"
@@ -297,9 +411,10 @@ def parse_excel(content: bytes) -> tuple[Case, ...]:
         if header_issues:
             raise DatasetExcelValidationError(tuple(header_issues))
 
-        issues: list[ExcelImportIssue] = []
+        issues = _IssueCollector()
         cases: dict[str, list[_Row]] = {}
         anonymous_cases: list[list[_Row]] = []
+        anonymous_case_names: set[str] = set()
         row_number = 2
         while (row_cells := _next_worksheet_row(rows)) is not None:
             if row_number > MAX_DATA_ROWS + 1:
@@ -331,19 +446,40 @@ def parse_excel(content: bytes) -> tuple[Case, ...]:
             if not _is_blank(case_id):
                 cases.setdefault(str(case_id), []).append(parsed)
             else:
+                case_name = str(parsed.cells["case_name"]).strip()
+                if parsed.turn_order is not None and parsed.turn_order > 1:
+                    issues.append(ExcelImportIssue(
+                        SHEET_NAME,
+                        row_number,
+                        "case_id",
+                        "case_id is required when turn_order is greater than 1",
+                    ))
+                if case_name in anonymous_case_names:
+                    issues.append(ExcelImportIssue(
+                        SHEET_NAME,
+                        row_number,
+                        "case_id",
+                        "repeated case_name requires a case_id for multi-turn grouping",
+                    ))
+                anonymous_case_names.add(case_name)
                 anonymous_cases.append([parsed])
             row_number += 1
 
         output: list[Case] = []
-        for case_rows in [*cases.values(), *anonymous_cases]:
+        output_source_rows: list[tuple[int, ...]] = []
+        grouped_rows = [*cases.values(), *anonymous_cases]
+        grouped_rows.sort(key=lambda group: min(row.number for row in group))
+        for case_rows in grouped_rows:
             _validate_case_structure(case_rows, issues)
             parsed_case = _build_case(case_rows, issues)
             if parsed_case is not None:
                 output.append(parsed_case)
+                ordered_rows = _ordered_case_rows(case_rows)
+                output_source_rows.append(tuple(row.number for row in ordered_rows))
 
         if issues:
-            raise DatasetExcelValidationError(tuple(issues))
-        return tuple(output)
+            raise issues.as_error()
+        return ParsedExcel(tuple(output), tuple(output_source_rows))
     finally:
         workbook.close()
 
@@ -358,6 +494,25 @@ def _validate_xlsx_archive(content: bytes) -> None:
 
     issues: list[ExcelImportIssue] = []
     total_uncompressed = sum(member.file_size for member in members)
+    if len(members) > MAX_XLSX_ENTRIES:
+        issues.append(ExcelImportIssue(
+            SHEET_NAME,
+            None,
+            None,
+            f"archive entry count exceeds the {MAX_XLSX_ENTRIES} entry limit",
+        ))
+    active_content = {
+        "external links": any(name.startswith("xl/externalLinks/") for name in names),
+        "embedded objects": any(name.startswith("xl/embeddings/") for name in names),
+        "ActiveX controls": any(name.startswith("xl/activeX/") for name in names),
+        "macros": any(name.endswith("vbaProject.bin") for name in names),
+        "data connections": "xl/connections.xml" in names,
+    }
+    for label, present in active_content.items():
+        if present:
+            issues.append(ExcelImportIssue(
+                SHEET_NAME, None, None, f"workbook {label} are not allowed"
+            ))
     for member in members:
         if member.file_size > MAX_XLSX_ENTRY_UNCOMPRESSED_BYTES:
             issues.append(ExcelImportIssue(
@@ -398,7 +553,9 @@ def _validate_xlsx_archive(content: bytes) -> None:
 
 def _load_xlsx_workbook(content: bytes) -> Any:
     try:
-        return load_workbook(BytesIO(content), read_only=True, data_only=False)
+        return load_workbook(
+            BytesIO(content), read_only=True, data_only=False, keep_links=False
+        )
     except _PACKAGE_EXCEPTIONS as exc:
         raise _invalid_xlsx_error(exc) from exc
 
@@ -471,7 +628,7 @@ def _header_issues(header: tuple[Any, ...]) -> list[ExcelImportIssue]:
 
 
 def _parse_row(
-    raw_cells: dict[str, Any], row: int, issues: list[ExcelImportIssue],
+    raw_cells: dict[str, Any], row: int, issues: _IssueCollector,
 ) -> _Row:
     cells = dict(raw_cells)
     for column, default in OPTIONAL_DEFAULTS.items():
@@ -494,7 +651,7 @@ def _parse_json_cell(
     row: int,
     required: bool,
     default: Any,
-    issues: list[ExcelImportIssue],
+    issues: _IssueCollector,
 ) -> Any:
     if _is_blank(value):
         if required:
@@ -510,7 +667,7 @@ def _parse_json_cell(
         return default
 
 
-def _parse_turn_order(value: Any, row: int, issues: list[ExcelImportIssue]) -> int | None:
+def _parse_turn_order(value: Any, row: int, issues: _IssueCollector) -> int | None:
     if _is_blank(value):
         return None
     if isinstance(value, bool):
@@ -529,7 +686,7 @@ def _parse_turn_order(value: Any, row: int, issues: list[ExcelImportIssue]) -> i
     return None
 
 
-def _validate_case_structure(rows: list[_Row], issues: list[ExcelImportIssue]) -> None:
+def _validate_case_structure(rows: list[_Row], issues: _IssueCollector) -> None:
     first = rows[0]
     for row in rows[1:]:
         for column in (
@@ -579,11 +736,15 @@ def _validate_case_structure(rows: list[_Row], issues: list[ExcelImportIssue]) -
         ))
 
 
-def _build_case(rows: list[_Row], issues: list[ExcelImportIssue]) -> Case | None:
-    ordered_rows = sorted(rows, key=lambda row: (
+def _ordered_case_rows(rows: list[_Row]) -> list[_Row]:
+    return sorted(rows, key=lambda row: (
         row.turn_order is None,
         row.turn_order if row.turn_order is not None else row.number,
     ))
+
+
+def _build_case(rows: list[_Row], issues: _IssueCollector) -> Case | None:
+    ordered_rows = _ordered_case_rows(rows)
     first = ordered_rows[0]
     payload: dict[str, Any] = {
         "name": first.cells["case_name"],

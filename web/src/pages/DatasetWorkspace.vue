@@ -8,7 +8,8 @@ import VersionSelector from '../components/dataset/VersionSelector.vue'
 import CaseTable from '../components/dataset/CaseTable.vue'
 import CaseEditor from '../components/dataset/CaseEditor.vue'
 import type {
-  DatasetExport, DatasetSummary, DatasetVersion, EvaluationCase, ExcelImportIssue, ValidationIssue,
+  DatasetExport, DatasetSummary, DatasetVersion, EvaluationCase, ExcelImportErrorDetail,
+  ExcelImportIssue, ValidationIssue,
 } from '../types/dataset'
 
 const emit = defineEmits<{ runCreated: [run: Run] }>()
@@ -33,6 +34,8 @@ const dialogDescription = ref('')
 const importInput = ref<HTMLInputElement|null>(null)
 const excelImportInput = ref<HTMLInputElement|null>(null)
 const excelImportIssues = ref<ExcelImportIssue[]>([])
+const excelImportTotalCount = ref(0)
+const excelImportTruncated = ref(false)
 const importErrors = ref<string[]>([])
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 
@@ -298,6 +301,20 @@ async function exportExcelVersion(version: number) {
   }
 }
 
+async function downloadExcelTemplate() {
+  try {
+    const blob = await datasetApi.excelTemplate()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'agentgate-dataset-template.xlsx'
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    showError(error, '下载 Excel 模板失败')
+  }
+}
+
 function openImport() {
   importErrors.value = []
   excelImportIssues.value = []
@@ -336,6 +353,8 @@ async function importDataset(event: Event) {
 function openExcelImport() {
   importErrors.value = []
   excelImportIssues.value = []
+  excelImportTotalCount.value = 0
+  excelImportTruncated.value = false
   excelImportInput.value?.click()
 }
 
@@ -349,19 +368,34 @@ function isExcelImportIssue(value: unknown): value is ExcelImportIssue {
     && typeof (value as ExcelImportIssue).message === 'string'
 }
 
+function isExcelImportErrorDetail(value: unknown): value is ExcelImportErrorDetail {
+  return typeof value === 'object' && value !== null
+    && 'issues' in value && Array.isArray((value as ExcelImportErrorDetail).issues)
+    && 'total_count' in value
+}
+
 async function importExcelDataset(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
   busy.value = true
   excelImportIssues.value = []
+  excelImportTotalCount.value = 0
+  excelImportTruncated.value = false
   try {
     const result = await datasetApi.importExcel(file, datasetNameFromExcel(file), '')
     await loadDatasets(result.dataset.id)
     ElMessage.success('Excel 已导入为草稿')
   } catch (error) {
-    if (error instanceof ApiError && Array.isArray(error.detail)) {
-      excelImportIssues.value = error.detail.filter(isExcelImportIssue)
+    if (error instanceof ApiError) {
+      const detail = isExcelImportErrorDetail(error.detail)
+        ? error.detail.issues
+        : Array.isArray(error.detail) ? error.detail : []
+      if (isExcelImportErrorDetail(error.detail)) {
+        excelImportTotalCount.value = error.detail.total_count
+        excelImportTruncated.value = error.detail.truncated
+      }
+      excelImportIssues.value = detail.filter(isExcelImportIssue)
       if (excelImportIssues.value.length) return
     }
     importErrors.value = importErrorMessages(error, 'Excel 导入失败').map(message => `Excel：${message}`)
@@ -436,6 +470,9 @@ onMounted(async () => {
           工作表 <b data-testid="excel-import-issue-sheet">{{ issue.sheet }}</b> · 行 <span data-testid="excel-import-issue-row">{{ issue.row ?? '—' }}</span> · 列 <span data-testid="excel-import-issue-column">{{ issue.column ?? '—' }}</span>：{{ issue.message }}
         </li>
       </ul>
+      <p v-if="excelImportTruncated">
+        共发现 {{ excelImportTotalCount }} 个问题，仅展示前 {{ excelImportIssues.length }} 个。
+      </p>
       <ul v-else><li v-for="message in importErrors" :key="message">{{ message }}</li></ul>
     </el-alert>
 
@@ -474,6 +511,7 @@ onMounted(async () => {
       @archive="archiveDataset"
       @import="openImport"
       @import-excel="openExcelImport"
+      @download-excel-template="downloadExcelTemplate"
       />
       <CaseTable
         :items="activeVersion?.cases ?? []"

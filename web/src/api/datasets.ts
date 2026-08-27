@@ -78,6 +78,7 @@ export const datasetApi = {
     ),
   exportExcel: (datasetId: string, version: number) =>
     requestBlob(`/api/datasets/${id(datasetId)}/versions/${version}/export/excel`),
+  excelTemplate: () => requestBlob('/api/datasets/excel/template'),
   importDataset: (payload: DatasetExport) =>
     request<{ dataset: DatasetRecord; version: DatasetVersion }>('/api/datasets/import', {
       method: 'POST', headers, body: JSON.stringify(payload),
