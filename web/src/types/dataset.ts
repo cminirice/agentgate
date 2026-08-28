@@ -1,6 +1,9 @@
+// Dataset 域类型（对齐后端 Pydantic，迁移自 web/src/types/dataset.ts）
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
-export interface JsonObject { [key: string]: JsonValue }
+export interface JsonObject {
+  [key: string]: JsonValue
+}
 
 export type CaseCategory = 'positive' | 'negative' | 'boundary'
 export type CaseDifficulty = 'easy' | 'medium' | 'hard'
@@ -128,6 +131,17 @@ export interface SchemaIssue {
   declared?: string | null
 }
 
-export type SchemaValidationResult =
-  | { valid: true }
-  | { valid: false; errors: SchemaIssue[] }
+export type SchemaValidationResult = { valid: true } | { valid: false; errors: SchemaIssue[] }
+
+export interface AddRegressionCaseRequest {
+  regression_dataset_id?: string
+  new_dataset_name?: string
+  new_dataset_description?: string
+  reason?: string
+}
+
+export interface AddRegressionCaseResponse {
+  dataset: DatasetRecord
+  draft: DatasetVersion
+  case: EvaluationCase
+}
