@@ -1,83 +1,111 @@
-import { request } from './client'
+// Dataset 域 API（Case 域）—— 迁移自 web/src/api/datasets.ts，fetch → Axios
+import { http } from '@/utils/request'
 import type {
-  DatasetDetail, DatasetExport, DatasetMutation, DatasetRecord, DatasetSummary,
-  DatasetVersion, EvaluationCase,
-} from '../types/dataset'
+  AddRegressionCaseRequest,
+  AddRegressionCaseResponse,
+  DatasetDetail,
+  DatasetExport,
+  DatasetMutation,
+  DatasetRecord,
+  DatasetSummary,
+  DatasetVersion,
+  EvaluationCase,
+  SchemaValidationResult,
+  ValidationIssue,
+} from '@/types/dataset'
 
-const headers = { 'Content-Type': 'application/json' }
-const id = encodeURIComponent
+const enc = encodeURIComponent
 
-export const datasetApi = {
-  list: () => request<DatasetSummary[]>('/api/datasets'),
-  create: (name: string, description = '', purpose: 'standard'|'regression' = 'standard') =>
-    request<DatasetMutation>('/api/datasets', {
-      method: 'POST', headers, body: JSON.stringify({ name, description, purpose }),
-    }),
-  detail: (datasetId: string) =>
-    request<DatasetDetail>(`/api/datasets/${id(datasetId)}`),
+export const datasetsApi = {
+  list: () => http.get<DatasetSummary[]>('/api/datasets'),
+
+  create: (name: string, description = '', purpose: 'standard' | 'regression' = 'standard') =>
+    http.post<DatasetMutation>('/api/datasets', { name, description, purpose }),
+
+  detail: (datasetId: string) => http.get<DatasetDetail>(`/api/datasets/${enc(datasetId)}`),
+
   update: (
     datasetId: string,
-    changes: Partial<Pick<DatasetRecord, 'name'|'description'|'archived'>>,
-  ) => request<DatasetRecord>(`/api/datasets/${id(datasetId)}`, {
-    method: 'PATCH', headers, body: JSON.stringify(changes),
-  }),
-  archive: (datasetId: string) =>
-    request<DatasetRecord>(`/api/datasets/${id(datasetId)}`, { method: 'DELETE' }),
-  copy: (datasetId: string, name: string, sourceVersion?: number|null) =>
-    request<DatasetMutation>(`/api/datasets/${id(datasetId)}/copy`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ name, source_version: sourceVersion ?? null }),
+    changes: Partial<Pick<DatasetRecord, 'name' | 'description' | 'archived'>>,
+  ) => http.patch<DatasetRecord>(`/api/datasets/${enc(datasetId)}`, changes),
+
+  archive: (datasetId: string) => http.delete<DatasetRecord>(`/api/datasets/${enc(datasetId)}`),
+
+  copy: (datasetId: string, name: string, sourceVersion?: number | null) =>
+    http.post<DatasetMutation>(`/api/datasets/${enc(datasetId)}/copy`, {
+      name,
+      source_version: sourceVersion ?? null,
     }),
+
   versions: (datasetId: string) =>
-    request<DatasetVersion[]>(`/api/datasets/${id(datasetId)}/versions`),
+    http.get<DatasetVersion[]>(`/api/datasets/${enc(datasetId)}/versions`),
+
   version: (datasetId: string, version: number) =>
-    request<DatasetVersion>(`/api/datasets/${id(datasetId)}/versions/${version}`),
+    http.get<DatasetVersion>(`/api/datasets/${enc(datasetId)}/versions/${version}`),
+
   currentDraft: (datasetId: string) =>
-    request<DatasetVersion>(`/api/datasets/${id(datasetId)}/drafts/current`),
-  createDraft: (datasetId: string, basedOnVersion?: number|null) =>
-    request<DatasetVersion>(`/api/datasets/${id(datasetId)}/drafts`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ based_on_version: basedOnVersion ?? null }),
+    http.get<DatasetVersion>(`/api/datasets/${enc(datasetId)}/drafts/current`),
+
+  createDraft: (datasetId: string, basedOnVersion?: number | null) =>
+    http.post<DatasetVersion>(`/api/datasets/${enc(datasetId)}/drafts`, {
+      based_on_version: basedOnVersion ?? null,
     }),
+
   discardDraft: (datasetId: string) =>
-    request<void>(`/api/datasets/${id(datasetId)}/drafts/current`, {
-      method: 'DELETE',
-    }),
+    http.delete<void>(`/api/datasets/${enc(datasetId)}/drafts/current`),
+
   publish: (datasetId: string) =>
-    request<DatasetVersion>(`/api/datasets/${id(datasetId)}/drafts/publish`, {
-      method: 'POST',
-    }),
+    http.post<DatasetVersion>(`/api/datasets/${enc(datasetId)}/drafts/publish`),
+
   addCase: (datasetId: string, item: EvaluationCase) =>
-    request<DatasetVersion>(`/api/datasets/${id(datasetId)}/drafts/cases`, {
-      method: 'POST', headers, body: JSON.stringify(item),
-    }),
+    http.post<DatasetVersion>(`/api/datasets/${enc(datasetId)}/drafts/cases`, item),
+
   updateCase: (datasetId: string, item: EvaluationCase) =>
-    request<DatasetVersion>(
-      `/api/datasets/${id(datasetId)}/drafts/cases/${id(item.id)}`,
-      { method: 'PUT', headers, body: JSON.stringify(item) },
+    http.put<DatasetVersion>(
+      `/api/datasets/${enc(datasetId)}/drafts/cases/${enc(item.id)}`,
+      item,
     ),
+
   removeCase: (datasetId: string, caseId: string) =>
-    request<DatasetVersion>(
-      `/api/datasets/${id(datasetId)}/drafts/cases/${id(caseId)}`,
-      { method: 'DELETE' },
+    http.delete<DatasetVersion>(
+      `/api/datasets/${enc(datasetId)}/drafts/cases/${enc(caseId)}`,
     ),
+
   copyCase: (datasetId: string, caseId: string) =>
-    request<DatasetVersion>(
-      `/api/datasets/${id(datasetId)}/drafts/cases/${id(caseId)}/copy`,
-      { method: 'POST' },
+    http.post<DatasetVersion>(
+      `/api/datasets/${enc(datasetId)}/drafts/cases/${enc(caseId)}/copy`,
     ),
+
   reorderCases: (datasetId: string, caseIds: string[]) =>
-    request<DatasetVersion>(`/api/datasets/${id(datasetId)}/drafts/case-order`, {
-      method: 'PUT', headers, body: JSON.stringify({ case_ids: caseIds }),
+    http.put<DatasetVersion>(`/api/datasets/${enc(datasetId)}/drafts/case-order`, {
+      case_ids: caseIds,
     }),
+
   exportVersion: (datasetId: string, version: number) =>
-    request<DatasetExport>(
-      `/api/datasets/${id(datasetId)}/versions/${version}/export`
-    ),
+    http.get<DatasetExport>(`/api/datasets/${enc(datasetId)}/versions/${version}/export`),
+
   importDataset: (payload: DatasetExport) =>
-    request<{ dataset: DatasetRecord; version: DatasetVersion }>('/api/datasets/import', {
-      method: 'POST', headers, body: JSON.stringify(payload),
-    }),
+    http.post<{ dataset: DatasetRecord; version: DatasetVersion }>(
+      '/api/datasets/import',
+      payload,
+    ),
+
+  // 加入回归集（从 client.ts api.addCaseToRegressionDataset 迁移）
+  addCaseToRegressionDataset: (runId: string, caseId: string, payload: AddRegressionCaseRequest) =>
+    http.post<AddRegressionCaseResponse>(
+      `/api/runs/${enc(runId)}/cases/${enc(caseId)}/regression`,
+      payload,
+    ),
+
+  // JSON Schema 校验（属 Dataset 域，供 ExpectationEditor 预检）
+  validateSchema: (payload: {
+    json_schema: unknown
+    instance_mode?: 'structured' | 'json_text'
+  }) => http.post<SchemaValidationResult>('/api/json-schema/validate', payload),
+
+  // 校验问题类型导出（供页面 catch 后断言）
+  asValidationIssues: (detail: unknown): ValidationIssue[] =>
+    Array.isArray(detail) ? (detail as ValidationIssue[]) : [],
 }
+
+export default datasetsApi
