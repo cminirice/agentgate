@@ -1,6 +1,9 @@
+// Dataset 域类型（对齐后端 Pydantic，迁移自 web/src/types/dataset.ts）
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
-export interface JsonObject { [key: string]: JsonValue }
+export interface JsonObject {
+  [key: string]: JsonValue
+}
 
 export type CaseCategory = 'positive' | 'negative' | 'boundary'
 export type CaseDifficulty = 'easy' | 'medium' | 'hard'
@@ -24,7 +27,11 @@ export type Condition =
   | { kind: 'matches_pattern'; pattern: string }
   | { kind: 'one_of'; allowed: JsonValue[] }
   | { kind: 'must_be_missing' }
-  | { kind: 'matches_json_schema'; json_schema: JsonObject; instance_mode?: 'structured' | 'json_text' }
+  | {
+      kind: 'matches_json_schema'
+      json_schema: JsonObject
+      instance_mode?: 'structured' | 'json_text'
+    }
 
 interface ExpectationBase {
   id: string
@@ -128,9 +135,7 @@ export interface SchemaIssue {
   declared?: string | null
 }
 
-export type SchemaValidationResult =
-  | { valid: true }
-  | { valid: false; errors: SchemaIssue[] }
+export type SchemaValidationResult = { valid: true } | { valid: false; errors: SchemaIssue[] }
 
 export interface ExcelImportIssue {
   sheet: string
@@ -144,4 +149,17 @@ export interface ExcelImportErrorDetail {
   total_count: number
   truncated: boolean
   issues: ExcelImportIssue[]
+}
+
+export interface AddRegressionCaseRequest {
+  regression_dataset_id?: string
+  new_dataset_name?: string
+  new_dataset_description?: string
+  reason?: string
+}
+
+export interface AddRegressionCaseResponse {
+  dataset: DatasetRecord
+  draft: DatasetVersion
+  case: EvaluationCase
 }
