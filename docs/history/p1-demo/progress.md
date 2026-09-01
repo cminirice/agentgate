@@ -11,7 +11,7 @@ The P1 loan-approval vertical slice is implemented on `goal/p1-demo`.
 
 ## Module status
 
-Audited against the current source tree on 2026-08-17. A green marker applies only to
+Audited against the current source tree on 2026-08-19. A green marker applies only to
 the behavior described in that row; it does not mean every future feature in that
 package is complete.
 
@@ -24,9 +24,9 @@ Markers:
 | Status | Module | Current implementation | Code location / next work |
 | --- | --- | --- | --- |
 | ✅ | Domain contracts | Immutable Pydantic models for Cases, Datasets, evaluations, Runs, Traces, Results, Metrics, Gates, and reports | `src/agentgate/domain/` |
-| ✅ | Dataset and Case P1 workflow | SQLite CRUD, drafts, immutable published versions, copy/reorder, validation, canonical JSON import/export, multi-turn Cases, and Web editor | `src/agentgate/case/`, `src/agentgate/storage/sqlite.py`, `web/src/pages/DatasetWorkspace.vue` |
+| ✅ | Dataset and Case P1 workflow | SQLite CRUD, drafts, immutable published versions, copy/reorder, validation, canonical JSON and Excel import/export, multi-turn Cases, and Web editor | `src/agentgate/case/`, `src/agentgate/storage/sqlite.py`, `src/agentgate/server/application.py`, `web/src/pages/DatasetWorkspace.vue` |
 | ✅ | Single-Case rerun | Reuses the original RunSnapshot Case and evaluation configuration, permits a new Demo Agent version, records rerun lineage, and compares evaluator outcomes | `src/agentgate/run/core.py`, `src/agentgate/control_plane/service.py`, `web/src/App.vue` |
-| ⬜ | Later Dataset features | Excel import/export, automatic Case/template generation, and regression-set workflow are not implemented | Plans remain under `docs/dataset/` |
+| ⬜ | Later Dataset features | Automatic Case/template generation remains deferred | Plans remain under `docs/dataset/` |
 | ✅ | Evaluator kernel | Registration, plan validation, observations, operators, scoring, dependency resolution, N/A, and ERROR isolation | `src/agentgate/evaluator/` |
 | ✅ | Rule evaluators | Seven rules: routing, required tool, forbidden tool, tool arguments, final state, final output, and policy compliance | `src/agentgate/evaluator/rules/` |
 | ✅ | JSON Schema evaluation | `matches_json_schema` operator validates Draft 2020-12 schemas with `structured`/`json_text` instance modes; plan-time validation rejects unsupported drafts, remote `$ref`/`$dynamicRef`, and invalid schemas; violation output is sorted and bounded; library crashes become ERROR, not FAIL | `src/agentgate/domain/expectation.py`, `src/agentgate/evaluator/operators/json_schema.py`, `src/agentgate/evaluator/validation.py` |
@@ -72,7 +72,7 @@ Markers:
   `GET /health`. OTLP/gRPC remains an intentionally reserved boundary.
 - The Vue 3, TypeScript, and Element Plus UI uses real API calls for overview, launch, run
   detail, result summary, failed-case trace drill-down, and the three-column Dataset/Case
-  workspace. Draft editing, immutable publishing, JSON import/export, and version-aware
+  workspace. Draft editing, immutable publishing, JSON/Excel import and export, and version-aware
   evaluation all persist through SQLite.
 - Seven deterministic Rule evaluators cover routing, required tools, forbidden tools, tool
   arguments, final state, final output, and policy compliance. LLM Judge and Hybrid have version-1
@@ -153,6 +153,6 @@ The deterministic acceptance expectation is:
 - Public benchmark integrations.
 - LLM Judge and Hybrid evaluator runtime.
 - A/B consistency enforcement.
-- Static Skill analysis, automatic Dataset/template generation, and regression-set workflow.
+- Static Skill analysis and automatic Dataset/template generation.
 - Credential management.
 - Ordered-sequence operators.

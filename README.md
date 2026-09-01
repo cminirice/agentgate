@@ -68,3 +68,7 @@ deterministic target, HTTP External Target support, CLI, REST/OTLP HTTP endpoint
 Chinese Vue UI. Current status is maintained in the relevant Trace, Run, Dataset, and
 Evaluator documents. The original P1 walkthrough is retained under
 [history](docs/history/p1-demo/demo-test-guide.md).
+
+Published Dataset versions can be exported as JSON or Excel. Excel imports create a new
+Dataset Draft and support single-turn and multi-turn Cases. See the
+[Dataset documentation](docs/dataset/README.md) for the workbook contract and limits.

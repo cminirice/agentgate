@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
+from fastapi import (
+    APIRouter, FastAPI, File, Form, HTTPException, Request, Response, UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
-from agentgate.case import DatasetExport, DatasetValidationError
+from agentgate.case import (
+    DatasetExcelExportError,
+    DatasetExcelValidationError,
+    DatasetExport,
+    DatasetValidationError,
+    ExcelImportIssue,
+)
 from agentgate.control_plane import EvaluationService
 from agentgate.domain import Case, DatasetPurpose, TargetRef, TargetType
 from agentgate.run.targets.base import TargetIntegrationError
@@ -81,11 +94,148 @@ class ValidateSchemaRequest(BaseModel):
     instance_mode: Literal["structured", "json_text"] = "structured"
 
 
+EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+MAX_EXCEL_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_EXCEL_REQUEST_BYTES = 11 * 1024 * 1024
+
+
+class ExcelRequestBodyLimitMiddleware:
+    """Bound the complete multipart envelope before FastAPI parses form data."""
+
+    def __init__(self, app: Any, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if not (
+            scope["type"] == "http"
+            and scope.get("method") == "POST"
+            and scope.get("path") == "/api/datasets/import/excel"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", ()))
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                declared_size = int(content_length)
+            except ValueError:
+                declared_size = 0
+            if declared_size > self.max_bytes:
+                await self._reject(scope, receive, send)
+                return
+
+        messages: list[dict[str, Any]] = []
+        received_size = 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] == "http.disconnect":
+                break
+            if message["type"] != "http.request":
+                continue
+            received_size += len(message.get("body", b""))
+            if received_size > self.max_bytes:
+                await self._reject(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        message_index = 0
+
+        async def replay_receive() -> dict[str, Any]:
+            nonlocal message_index
+            if message_index < len(messages):
+                message = messages[message_index]
+                message_index += 1
+                return message
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_receive, send)
+
+    async def _reject(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        issue = _excel_issue_detail(
+            f"multipart request body exceeds {self.max_bytes // (1024 * 1024)} MiB"
+        )
+        response = JSONResponse(
+            status_code=413,
+            content={"detail": _excel_error_detail(
+                "excel_import_validation_failed", [issue], 1, False
+            )},
+        )
+        await response(scope, receive, send)
+
+
 def _raise_dataset_error(exc: ValueError, status_code: int = 422) -> None:
     detail: Any = str(exc)
-    if isinstance(exc, DatasetValidationError):
+    if isinstance(exc, DatasetExcelValidationError):
+        issues = [
+            {
+                "sheet": item.sheet,
+                "row": item.row,
+                "column": item.column,
+                "message": item.message,
+            }
+            for item in exc.issues
+        ]
+        detail = _excel_error_detail(
+            "excel_import_validation_failed",
+            issues,
+            exc.total_count,
+            exc.truncated,
+        )
+    elif isinstance(exc, DatasetExcelExportError):
+        issues = [
+            {
+                "sheet": item.sheet,
+                "row": item.row,
+                "column": item.column,
+                "message": item.message,
+            }
+            for item in exc.issues
+        ]
+        detail = _excel_error_detail(
+            "excel_export_validation_failed", issues, len(issues), False
+        )
+    elif isinstance(exc, DatasetValidationError):
         detail = [item.model_dump(mode="json") for item in exc.issues]
     raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
+def _excel_issue_detail(message: str) -> dict[str, Any]:
+    return {"sheet": "Cases", "row": None, "column": None, "message": message}
+
+
+def _excel_error_detail(
+    code: str,
+    issues: list[dict[str, Any]],
+    total_count: int,
+    truncated: bool,
+) -> dict[str, Any]:
+    return {
+        "code": code,
+        "total_count": total_count,
+        "truncated": truncated,
+        "issues": issues,
+    }
+
+
+def _excel_upload_error(message: str) -> DatasetExcelValidationError:
+    return DatasetExcelValidationError((ExcelImportIssue(
+        sheet="Cases", row=None, column=None, message=message
+    ),))
+
+
+def _excel_attachment_filename(name: str, version: int) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-")
+    return f"{sanitized or 'dataset'}-v{version}.xlsx"
+
+
+def _excel_content_disposition(name: str, version: int) -> str:
+    fallback = _excel_attachment_filename(name, version)
+    utf8_name = quote(f"{name}-v{version}.xlsx", safe="")
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{utf8_name}'
 
 
 def create_app(database_path: str | Path | None = None) -> FastAPI:
@@ -93,6 +243,10 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     service = EvaluationService(repository)
     datasets = service.dataset_service
     app = FastAPI(title="AgentGate", version="0.1.0")
+    app.add_middleware(
+        ExcelRequestBodyLimitMiddleware,
+        max_bytes=MAX_EXCEL_REQUEST_BYTES,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -127,6 +281,16 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             return {"dataset": dataset, "draft": draft}
         except ValueError as exc:
             _raise_dataset_error(exc)
+
+    @api.get("/datasets/excel/template")
+    def download_excel_template():
+        return StreamingResponse(
+            BytesIO(datasets.excel_template()),
+            media_type=EXCEL_MEDIA_TYPE,
+            headers={
+                "Content-Disposition": 'attachment; filename="agentgate-dataset-template.xlsx"'
+            },
+        )
 
     @api.get("/datasets/{dataset_id}")
     def dataset_detail(dataset_id: str):
@@ -263,6 +427,49 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             return {"dataset": dataset, "version": version}
         except ValueError as exc:
             _raise_dataset_error(exc)
+
+    @api.post("/datasets/import/excel", status_code=201)
+    async def import_dataset_excel(
+        file: UploadFile = File(...),
+        name: str = Form(...),
+        description: str = Form(""),
+    ):
+        try:
+            if not file.filename or not file.filename.lower().endswith(".xlsx"):
+                _raise_dataset_error(
+                    _excel_upload_error("file must have a .xlsx filename"), 415
+                )
+            content = await file.read(MAX_EXCEL_UPLOAD_BYTES + 1)
+            if len(content) > MAX_EXCEL_UPLOAD_BYTES:
+                _raise_dataset_error(
+                    _excel_upload_error("XLSX upload exceeds 10 MiB"), 413
+                )
+            dataset, version = await run_in_threadpool(
+                datasets.import_excel, content, name, description
+            )
+            return {"dataset": dataset, "version": version}
+        except ValueError as exc:
+            _raise_dataset_error(exc)
+
+    @api.get("/datasets/{dataset_id}/versions/{version}/export/excel")
+    def export_dataset_excel(dataset_id: str, version: int):
+        try:
+            content = datasets.export_excel(dataset_id, version)
+            dataset = datasets.get_dataset(dataset_id)
+            dataset_version = datasets.get_version(dataset_id, version)
+            return StreamingResponse(
+                BytesIO(content),
+                media_type=EXCEL_MEDIA_TYPE,
+                headers={
+                    "Content-Disposition": _excel_content_disposition(dataset.name, version),
+                    "ETag": f'"{dataset_version.content_sha256}"',
+                    "Cache-Control": "private, immutable",
+                },
+            )
+        except DatasetExcelExportError as exc:
+            _raise_dataset_error(exc)
+        except ValueError as exc:
+            _raise_dataset_error(exc, 404)
 
     @api.get("/evaluators")
     def evaluators():

@@ -27,7 +27,11 @@ export type Condition =
   | { kind: 'matches_pattern'; pattern: string }
   | { kind: 'one_of'; allowed: JsonValue[] }
   | { kind: 'must_be_missing' }
-  | { kind: 'matches_json_schema'; json_schema: JsonObject; instance_mode?: 'structured' | 'json_text' }
+  | {
+      kind: 'matches_json_schema'
+      json_schema: JsonObject
+      instance_mode?: 'structured' | 'json_text'
+    }
 
 interface ExpectationBase {
   id: string
@@ -132,6 +136,20 @@ export interface SchemaIssue {
 }
 
 export type SchemaValidationResult = { valid: true } | { valid: false; errors: SchemaIssue[] }
+
+export interface ExcelImportIssue {
+  sheet: string
+  row: number | null
+  column: string | null
+  message: string
+}
+
+export interface ExcelImportErrorDetail {
+  code: string
+  total_count: number
+  truncated: boolean
+  issues: ExcelImportIssue[]
+}
 
 export interface AddRegressionCaseRequest {
   regression_dataset_id?: string

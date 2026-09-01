@@ -28,6 +28,8 @@ import type {
   DatasetSummary,
   DatasetVersion,
   EvaluationCase,
+  ExcelImportErrorDetail,
+  ExcelImportIssue,
   ValidationIssue,
 } from '@/types/dataset'
 import PageContainer from '@/components/PageContainer.vue'
@@ -56,16 +58,26 @@ const dialogMode = ref<'create' | 'copy'>('create')
 const dialogName = ref('')
 const dialogDescription = ref('')
 const importInput = ref<HTMLInputElement | null>(null)
-const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+const excelImportInput = ref<HTMLInputElement | null>(null)
+const importErrors = ref<string[]>([])
+const excelImportIssues = ref<ExcelImportIssue[]>([])
+const excelImportTotalCount = ref(0)
+const excelImportTruncated = ref(false)
+const cloneJson = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
 const activeVersion = computed<DatasetVersion | null>(
   () => versions.value.find((item) => item.id === activeVersionId.value) ?? null,
 )
 const editable = computed(() => activeVersion.value?.status === 'draft')
-const publishedVersions = computed(() => versions.value.filter((item) => item.status === 'published'))
-const activeDataset = computed(() => datasets.value.find((item) => item.id === activeDatasetId.value) ?? null)
+const publishedVersions = computed(() =>
+  versions.value.filter((item) => item.status === 'published'),
+)
+const activeDataset = computed(
+  () => datasets.value.find((item) => item.id === activeDatasetId.value) ?? null,
+)
 const activeCaseIssues = computed(() => {
-  const caseIndex = activeVersion.value?.cases.findIndex((item) => item.id === activeCaseId.value) ?? -1
+  const caseIndex =
+    activeVersion.value?.cases.findIndex((item) => item.id === activeCaseId.value) ?? -1
   if (caseIndex < 0) return []
   const prefix = `cases[${caseIndex}]`
   return validationIssues.value.filter((issue) => issue.path.startsWith(prefix))
@@ -74,7 +86,8 @@ const groupedTargetVersions = computed(() => {
   const groups: Record<string, { label: string; items: Version[] }> = {}
   for (const item of targetVersions.value) {
     const key = item.adapter_type ?? 'python_fn'
-    if (!groups[key]) groups[key] = { label: key === 'http' ? 'HTTP Agent' : 'Demo Agent', items: [] }
+    if (!groups[key])
+      groups[key] = { label: key === 'http' ? 'HTTP Agent' : 'Demo Agent', items: [] }
     groups[key].items.push(item)
   }
   return Object.values(groups)
@@ -99,7 +112,8 @@ function selectFirstCase(version: DatasetVersion | null) {
 
 async function loadDatasets(preferredDatasetId = activeDatasetId.value) {
   datasets.value = await datasetsApi.list()
-  const selected = datasets.value.find((item) => item.id === preferredDatasetId) ?? datasets.value[0]
+  const selected =
+    datasets.value.find((item) => item.id === preferredDatasetId) ?? datasets.value[0]
   if (selected) await selectDataset(selected.id)
   else {
     activeDatasetId.value = ''
@@ -312,8 +326,53 @@ async function exportVersion(version: number) {
   URL.revokeObjectURL(url)
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function excelFilename(name: string, version: number) {
+  const safeName = name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'dataset'
+  return `${safeName}-v${version}.xlsx`
+}
+
+async function exportExcelVersion(version: number) {
+  try {
+    const blob = await datasetsApi.exportExcel(activeDatasetId.value, version)
+    downloadBlob(blob, excelFilename(activeDataset.value?.name ?? 'dataset', version))
+  } catch (error) {
+    showError(error, '导出 Excel 失败')
+  }
+}
+
+async function downloadExcelTemplate() {
+  try {
+    downloadBlob(await datasetsApi.excelTemplate(), 'agentgate-dataset-template.xlsx')
+  } catch (error) {
+    showError(error, '下载 Excel 模板失败')
+  }
+}
+
 function openImport() {
+  importErrors.value = []
+  excelImportIssues.value = []
   importInput.value?.click()
+}
+
+function importErrorMessages(error: unknown, fallback: string) {
+  if (error instanceof ApiError && Array.isArray(error.detail)) {
+    return error.detail.map((item) => {
+      if (typeof item === 'object' && item !== null && 'message' in item) {
+        return String((item as { message: unknown }).message)
+      }
+      return JSON.stringify(item)
+    })
+  }
+  return [error instanceof Error ? error.message : fallback]
 }
 
 async function importDataset(event: Event) {
@@ -323,11 +382,80 @@ async function importDataset(event: Event) {
   try {
     const payload = JSON.parse(await file.text()) as DatasetExport
     const result = await datasetsApi.importDataset(payload)
+    importErrors.value = []
     await loadDatasets(result.dataset.id)
     ElMessage.success('测评集已导入')
   } catch (error) {
-    showError(error, '导入失败')
+    importErrors.value = importErrorMessages(error, 'JSON 导入失败').map(
+      (message) => `JSON：${message}`,
+    )
   } finally {
+    input.value = ''
+  }
+}
+
+function openExcelImport() {
+  importErrors.value = []
+  excelImportIssues.value = []
+  excelImportTotalCount.value = 0
+  excelImportTruncated.value = false
+  excelImportInput.value?.click()
+}
+
+function datasetNameFromExcel(file: File) {
+  return file.name.replace(/\.xlsx$/i, '').trim() || 'Excel Dataset'
+}
+
+function isExcelImportIssue(value: unknown): value is ExcelImportIssue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ExcelImportIssue).sheet === 'string' &&
+    typeof (value as ExcelImportIssue).message === 'string'
+  )
+}
+
+function isExcelImportErrorDetail(value: unknown): value is ExcelImportErrorDetail {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'issues' in value &&
+    Array.isArray((value as ExcelImportErrorDetail).issues) &&
+    'total_count' in value
+  )
+}
+
+async function importExcelDataset(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  busy.value = true
+  excelImportIssues.value = []
+  excelImportTotalCount.value = 0
+  excelImportTruncated.value = false
+  try {
+    const result = await datasetsApi.importExcel(file, datasetNameFromExcel(file))
+    await loadDatasets(result.dataset.id)
+    ElMessage.success('Excel 已导入为草稿')
+  } catch (error) {
+    if (error instanceof ApiError) {
+      const detail = isExcelImportErrorDetail(error.detail)
+        ? error.detail.issues
+        : Array.isArray(error.detail)
+          ? error.detail
+          : []
+      if (isExcelImportErrorDetail(error.detail)) {
+        excelImportTotalCount.value = error.detail.total_count
+        excelImportTruncated.value = error.detail.truncated
+      }
+      excelImportIssues.value = detail.filter(isExcelImportIssue)
+      if (excelImportIssues.value.length) return
+    }
+    importErrors.value = importErrorMessages(error, 'Excel 导入失败').map(
+      (message) => `Excel：${message}`,
+    )
+  } finally {
+    busy.value = false
     input.value = ''
   }
 }
@@ -380,11 +508,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <PageContainer title="测评集与用例管理" description="编辑草稿、发布不可变版本，并用选定版本运行真实评估。">
+  <PageContainer
+    title="测评集与用例管理"
+    description="编辑草稿、发布不可变版本，并用选定版本运行真实评估。"
+  >
     <template #extra>
       <div v-if="activeDataset" class="workspace-status">
         <b>{{ activeDataset.name }}</b>
-        <span>{{ activeVersion?.status === 'draft' ? '编辑草稿' : `查看 v${activeVersion?.version ?? '—'}` }}</span>
+        <span>{{
+          activeVersion?.status === 'draft' ? '编辑草稿' : `查看 v${activeVersion?.version ?? '—'}`
+        }}</span>
       </div>
     </template>
 
@@ -398,7 +531,37 @@ onMounted(async () => {
       @publish="publishDraft"
       @discard="discardDraft"
       @export="exportVersion"
+      @export-excel="exportExcelVersion"
     />
+
+    <ElAlert
+      v-if="importErrors.length || excelImportIssues.length"
+      class="validation-alert"
+      title="导入失败"
+      type="error"
+      :closable="false"
+      show-icon
+      data-testid="dataset-import-errors"
+    >
+      <ul v-if="excelImportIssues.length" data-testid="excel-import-issues">
+        <li
+          v-for="(issue, index) in excelImportIssues"
+          :key="`${issue.sheet}-${issue.row}-${issue.column}-${issue.message}`"
+          :data-testid="`excel-import-issue-${index}`"
+        >
+          工作表 <b data-testid="excel-import-issue-sheet">{{ issue.sheet }}</b> · 行
+          <span data-testid="excel-import-issue-row">{{ issue.row ?? '—' }}</span> · 列
+          <span data-testid="excel-import-issue-column">{{ issue.column ?? '—' }}</span
+          >：{{ issue.message }}
+        </li>
+      </ul>
+      <p v-if="excelImportTruncated">
+        共发现 {{ excelImportTotalCount }} 个问题，仅展示前 {{ excelImportIssues.length }} 个。
+      </p>
+      <ul v-else>
+        <li v-for="message in importErrors" :key="message">{{ message }}</li>
+      </ul>
+    </ElAlert>
 
     <ElAlert
       v-if="validationIssues.length"
@@ -410,7 +573,8 @@ onMounted(async () => {
     >
       <ul>
         <li v-for="issue in validationIssues" :key="`${issue.path}-${issue.message}`">
-          <code>{{ issue.path }}</code>：{{ issue.message }}
+          <code>{{ issue.path }}</code
+          >：{{ issue.message }}
         </li>
       </ul>
     </ElAlert>
@@ -425,6 +589,8 @@ onMounted(async () => {
         @copy="openCopy"
         @archive="archiveDataset"
         @import="openImport"
+        @import-excel="openExcelImport"
+        @download-excel-template="downloadExcelTemplate"
       />
       <CaseTable
         :items="activeVersion?.cases ?? []"
@@ -460,7 +626,11 @@ onMounted(async () => {
         aria-label="运行 Agent 版本"
         @update:model-value="onAgentChange"
       >
-        <ElOptionGroup v-for="group in groupedTargetVersions" :key="group.label" :label="group.label">
+        <ElOptionGroup
+          v-for="group in groupedTargetVersions"
+          :key="group.label"
+          :label="group.label"
+        >
           <ElOption
             v-for="item in group.items"
             :key="item.id"
@@ -484,10 +654,25 @@ onMounted(async () => {
         :loading="busy"
         data-testid="run-dataset-version"
         @click="launchEvaluation"
-      >运行此版本 →</ElButton>
+        >运行此版本 →</ElButton
+      >
     </div>
 
-    <input ref="importInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="importDataset" />
+    <input
+      ref="importInput"
+      class="hidden-file-input"
+      type="file"
+      accept="application/json,.json"
+      @change="importDataset"
+    />
+    <input
+      ref="excelImportInput"
+      class="hidden-file-input"
+      type="file"
+      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      data-testid="excel-import-file"
+      @change="importExcelDataset"
+    />
 
     <ElDialog
       :model-value="datasetDialog"
@@ -497,7 +682,11 @@ onMounted(async () => {
     >
       <ElForm label-position="top">
         <ElFormItem label="名称">
-          <ElInput :model-value="dialogName" data-testid="dataset-name" @update:model-value="(v: string) => (dialogName = v)" />
+          <ElInput
+            :model-value="dialogName"
+            data-testid="dataset-name"
+            @update:model-value="(v: string) => (dialogName = v)"
+          />
         </ElFormItem>
         <ElFormItem v-if="dialogMode === 'create'" label="描述">
           <ElInput
@@ -510,7 +699,13 @@ onMounted(async () => {
       </ElForm>
       <template #footer>
         <ElButton @click="datasetDialog = false">取消</ElButton>
-        <ElButton type="primary" :loading="busy" data-testid="submit-dataset" @click="submitDatasetDialog">确认</ElButton>
+        <ElButton
+          type="primary"
+          :loading="busy"
+          data-testid="submit-dataset"
+          @click="submitDatasetDialog"
+          >确认</ElButton
+        >
       </template>
     </ElDialog>
   </PageContainer>

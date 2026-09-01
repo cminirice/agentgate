@@ -11,7 +11,7 @@ export default defineConfig({
   fullyParallel: false,
   webServer: [
     {
-      command: 'python -m uvicorn agentgate.server.application:app --host 127.0.0.1 --port 18000',
+      command: 'python3 -m uvicorn agentgate.server.application:app --host 127.0.0.1 --port 18000',
       port: 18000,
       reuseExistingServer: false,
       env: { ...process.env, AGENTGATE_DB: testDatabase, PYTHONPATH: '../src' },
