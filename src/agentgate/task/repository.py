@@ -220,7 +220,7 @@ class TaskRepository:
         page: int = 0,
         size: int = 10,
     ) -> list[EvalTask]:
-        """查询任务列表"""
+        """查询任务列表（按创建时间倒序）"""
         query = self.session.query(EvalTaskModel)
 
         if status:
@@ -228,6 +228,8 @@ class TaskRepository:
         if target_id:
             query = query.filter(EvalTaskModel.target_id == target_id)
 
+        # 按创建时间倒序排列
+        query = query.order_by(EvalTaskModel.created_at.desc())
         query = query.offset(page * size).limit(size)
         models = query.all()
 
