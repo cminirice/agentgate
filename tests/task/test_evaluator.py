@@ -45,7 +45,7 @@ def test_rule_evaluator_not_contains():
     execution = CaseExecution(
         run_id="run-1",
         case_id="case-1",
-        agent_response="Success! No errors here.",
+        agent_response="Success! All clear here.",
     )
 
     result = evaluator.calculate(execution)
@@ -57,7 +57,7 @@ def test_rule_evaluator_regex():
     """测试规则评估器 - regex规则"""
     evaluator = RuleEvaluator({
         "rules": [
-            {"type": "regex", "value": r"\\d{3}-\\d{4}", "weight": 1.0},
+            {"type": "regex", "value": r"\d{3}-\d{4}", "weight": 1.0},
         ],
         "pass_threshold": 60,
     })

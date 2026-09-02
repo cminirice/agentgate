@@ -12,10 +12,11 @@ from typing import TYPE_CHECKING
 
 from .agent import TargetAgentFactory
 from .domain import (
-    AgentType, CaseExecution, Dataset, DatasetSnapshot, EvaluatorEntity,
+    AgentType, CaseExecution, DatasetSnapshot, EvaluatorEntity,
     EvaluationResult, EvaluationResultEntity, EvalTask, TaskRun, TaskStatus,
     TargetAgentEntity, TargetSnapshot, utcnow,
 )
+from agentgate.domain.case import Dataset, Case
 from .evaluator import EvaluatorFactory
 
 if TYPE_CHECKING:

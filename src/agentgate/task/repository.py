@@ -42,13 +42,15 @@ class TargetAgentModel(Base):
 
 
 class TargetSnapshotModel(Base):
-    """智能体快照表模型"""
+    """评测对象快照表模型"""
     __tablename__ = "target_snapshot"
 
     id = Column(String(36), primary_key=True)
     target_id = Column(String(36), ForeignKey("target_agent.id"))
-    agent_type = Column(String(32))
-    snapshot_data = Column(JSON, default=dict)
+    agent_name = Column(String(255), default="")
+    agent_type = Column(String(32), default="")
+    config = Column(JSON, default=dict)
+    status = Column(String(32), default="ACTIVE")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -83,8 +85,43 @@ class DatasetSnapshotModel(Base):
 
     id = Column(String(36), primary_key=True)
     dataset_id = Column(String(36), ForeignKey("dataset.id"))
-    snapshot_data = Column(JSON, default=dict)
-    case_count = Column(Integer, default=0)
+    name = Column(String(255), default="")
+    description = Column(Text, default="")
+    purpose = Column(String(32), default="standard")
+    archived = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CaseSnapshotModel(Base):
+    """用例快照表模型"""
+    __tablename__ = "case_snapshot"
+
+    id = Column(String(36), primary_key=True)
+    case_id = Column(String(36), ForeignKey("case_table.id"))
+    name = Column(String(255), default="")
+    initial_state = Column(JSON, default=dict)
+    category = Column(String(32), default="positive")
+    difficulty = Column(String(32), default="medium")
+    tags = Column(String(255), default="")
+    notes = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CaseTurnSnapshotModel(Base):
+    """用例轮次快照表模型"""
+    __tablename__ = "case_turn_snapshot"
+
+    id = Column(String(36), primary_key=True)
+    case_snapshot_id = Column(String(36), ForeignKey("case_snapshot.id"))
+    case_turn_id = Column(String(36), default="")
+    input = Column(JSON, default=dict)
+    expected_skill = Column(String(255), default="")
+    expectations = Column(Text, default="")
+    required_tools = Column(Text, default="")
+    forbidden_tools = Column(Text, default="")
+    policy_rules = Column(Text, default="")
+    notes = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -201,6 +238,8 @@ class TaskRepository:
             evaluator_id=task.evaluator_id,
             status=task.status.value if hasattr(task.status, "value") else task.status,
             created_by=task.created_by,
+            created_at=task.created_at,
+            updated_at=task.updated_at,
         )
         self.session.add(model)
         self.session.commit()
@@ -235,8 +274,24 @@ class TaskRepository:
 
         return [self._to_task_entity(m) for m in models]
 
+    def count_tasks(
+        self,
+        status: str | None = None,
+        target_id: str | None = None,
+    ) -> int:
+        """统计任务数量"""
+        query = self.session.query(EvalTaskModel)
+
+        if status:
+            query = query.filter(EvalTaskModel.status == status)
+        if target_id:
+            query = query.filter(EvalTaskModel.target_id == target_id)
+
+        return query.count()
+
     def update_task(self, task: EvalTask) -> EvalTask:
         """更新任务"""
+        from .domain import utcnow
         model = self.session.query(EvalTaskModel).filter(EvalTaskModel.id == task.id).first()
         if model:
             model.status = task.status.value if hasattr(task.status, "value") else task.status
@@ -247,7 +302,7 @@ class TaskRepository:
                 model.dataset_snapshot_id = task.dataset_snapshot_id
             if hasattr(task, 'evaluator_snapshot_id') and task.evaluator_snapshot_id:
                 model.evaluator_snapshot_id = task.evaluator_snapshot_id
-            model.updated_at = datetime.utcnow()
+            model.updated_at = utcnow()
             self.session.commit()
         return task
 
@@ -275,6 +330,7 @@ class TaskRepository:
             passed_cases=run.passed_cases,
             failed_cases=run.failed_cases,
             avg_score=run.avg_score,
+            created_at=run.created_at,
         )
         self.session.add(model)
         self.session.commit()
@@ -310,6 +366,7 @@ class TaskRepository:
             evaluation_result_id=execution.evaluation_result_id,
             started_at=execution.started_at,
             completed_at=execution.completed_at,
+            created_at=execution.created_at,
         )
         self.session.add(model)
         self.session.commit()
@@ -355,29 +412,47 @@ class TaskRepository:
             "created_at": model.created_at.isoformat() if model.created_at else None,
         }
 
-    def create_target_snapshot(self, target_id: str, agent_type: str, snapshot_data: dict) -> str:
-        """创建智能体快照"""
+    def create_target_snapshot(
+        self,
+        target_id: str,
+        agent_name: str = "",
+        agent_type: str = "",
+        config: dict = None,
+        status: str = "ACTIVE",
+    ) -> str:
+        """创建评测对象快照"""
         from .domain import generate_uuid
         snapshot_id = generate_uuid()
         model = TargetSnapshotModel(
             id=snapshot_id,
             target_id=target_id,
+            agent_name=agent_name,
             agent_type=agent_type,
-            snapshot_data=snapshot_data,
+            config=config or {},
+            status=status,
         )
         self.session.add(model)
         self.session.commit()
         return snapshot_id
 
-    def create_dataset_snapshot(self, dataset_id: str, snapshot_data: dict, case_count: int = 0) -> str:
+    def create_dataset_snapshot(
+        self,
+        dataset_id: str,
+        name: str = "",
+        description: str = "",
+        purpose: str = "standard",
+        archived: bool = False,
+    ) -> str:
         """创建测评集快照"""
         from .domain import generate_uuid
         snapshot_id = generate_uuid()
         model = DatasetSnapshotModel(
             id=snapshot_id,
             dataset_id=dataset_id,
-            snapshot_data=snapshot_data,
-            case_count=case_count,
+            name=name,
+            description=description,
+            purpose=purpose,
+            archived=archived,
         )
         self.session.add(model)
         self.session.commit()
@@ -396,16 +471,76 @@ class TaskRepository:
         self.session.commit()
         return snapshot_id
 
+    def create_case_snapshot(
+        self,
+        case_id: str,
+        name: str = "",
+        initial_state: dict = None,
+        category: str = "positive",
+        difficulty: str = "medium",
+        tags: str = "",
+        notes: str = "",
+    ) -> str:
+        """创建用例快照"""
+        from .domain import generate_uuid
+        snapshot_id = generate_uuid()
+        model = CaseSnapshotModel(
+            id=snapshot_id,
+            case_id=case_id,
+            name=name,
+            initial_state=initial_state or {},
+            category=category,
+            difficulty=difficulty,
+            tags=tags,
+            notes=notes,
+        )
+        self.session.add(model)
+        self.session.commit()
+        return snapshot_id
+
+    def create_case_turn_snapshot(
+        self,
+        case_snapshot_id: str,
+        case_turn_id: str = "",
+        input: dict = None,
+        expected_skill: str = "",
+        expectations: str = "",
+        required_tools: str = "",
+        forbidden_tools: str = "",
+        policy_rules: str = "",
+        notes: str = "",
+    ) -> str:
+        """创建用例轮次快照"""
+        from .domain import generate_uuid
+        snapshot_id = generate_uuid()
+        model = CaseTurnSnapshotModel(
+            id=snapshot_id,
+            case_snapshot_id=case_snapshot_id,
+            case_turn_id=case_turn_id,
+            input=input or {},
+            expected_skill=expected_skill,
+            expectations=expectations,
+            required_tools=required_tools,
+            forbidden_tools=forbidden_tools,
+            policy_rules=policy_rules,
+            notes=notes,
+        )
+        self.session.add(model)
+        self.session.commit()
+        return snapshot_id
+
     def get_target_snapshot(self, snapshot_id: str) -> dict | None:
-        """获取智能体快照"""
+        """获取评测对象快照"""
         model = self.session.query(TargetSnapshotModel).filter(TargetSnapshotModel.id == snapshot_id).first()
         if not model:
             return None
         return {
             "id": model.id,
             "target_id": model.target_id,
-            "agent_type": model.agent_type,
-            "snapshot_data": model.snapshot_data or {},
+            "agent_name": model.agent_name or "",
+            "agent_type": model.agent_type or "",
+            "config": model.config or {},
+            "status": model.status or "ACTIVE",
             "created_at": model.created_at.isoformat() if model.created_at else None,
         }
 
@@ -417,8 +552,47 @@ class TaskRepository:
         return {
             "id": model.id,
             "dataset_id": model.dataset_id,
-            "snapshot_data": model.snapshot_data or {},
-            "case_count": model.case_count or 0,
+            "name": model.name or "",
+            "description": model.description or "",
+            "purpose": model.purpose or "standard",
+            "archived": model.archived or False,
+            "created_at": model.created_at.isoformat() if model.created_at else None,
+            "updated_at": model.updated_at.isoformat() if model.updated_at else None,
+        }
+
+    def get_case_snapshot(self, snapshot_id: str) -> dict | None:
+        """获取用例快照"""
+        model = self.session.query(CaseSnapshotModel).filter(CaseSnapshotModel.id == snapshot_id).first()
+        if not model:
+            return None
+        return {
+            "id": model.id,
+            "case_id": model.case_id,
+            "name": model.name or "",
+            "initial_state": model.initial_state or {},
+            "category": model.category or "positive",
+            "difficulty": model.difficulty or "medium",
+            "tags": model.tags or "",
+            "notes": model.notes or "",
+            "created_at": model.created_at.isoformat() if model.created_at else None,
+        }
+
+    def get_case_turn_snapshot(self, snapshot_id: str) -> dict | None:
+        """获取用例轮次快照"""
+        model = self.session.query(CaseTurnSnapshotModel).filter(CaseTurnSnapshotModel.id == snapshot_id).first()
+        if not model:
+            return None
+        return {
+            "id": model.id,
+            "case_snapshot_id": model.case_snapshot_id,
+            "case_turn_id": model.case_turn_id,
+            "input": model.input or {},
+            "expected_skill": model.expected_skill or "",
+            "expectations": model.expectations or "",
+            "required_tools": model.required_tools or "",
+            "forbidden_tools": model.forbidden_tools or "",
+            "policy_rules": model.policy_rules or "",
+            "notes": model.notes or "",
             "created_at": model.created_at.isoformat() if model.created_at else None,
         }
 
@@ -438,8 +612,9 @@ class TaskRepository:
     def _to_task_entity(self, model: EvalTaskModel) -> EvalTask:
         """转换为任务实体"""
         from . import (
-            Dataset, EvaluatorEntity, EvalTask, TargetAgentEntity,
+            EvaluatorEntity, EvalTask, TargetAgentEntity,
         )
+        from .domain import utcnow
         task = EvalTask(
             id=model.id,
             task_name=model.task_name,
@@ -451,14 +626,15 @@ class TaskRepository:
             target_snapshot_id=model.target_snapshot_id or "",
             dataset_snapshot_id=model.dataset_snapshot_id or "",
             evaluator_snapshot_id=model.evaluator_snapshot_id or "",
-            created_at=model.created_at or datetime.utcnow(),
-            updated_at=model.updated_at or datetime.utcnow(),
+            created_at=model.created_at if model.created_at else utcnow(),
+            updated_at=model.updated_at if model.updated_at else utcnow(),
         )
         return task
 
     def _to_run_entity(self, model: TaskRunModel) -> TaskRun:
         """转换为执行记录实体"""
         from . import TaskRun, TaskStatus
+        from .domain import utcnow
         return TaskRun(
             id=model.id,
             task_id=model.task_id,
@@ -476,7 +652,7 @@ class TaskRepository:
             completed_at=model.completed_at,
             terminated_by=model.terminated_by or "",
             error_message=model.error_message or "",
-            created_at=model.created_at or datetime.utcnow(),
+            created_at=model.created_at if model.created_at else utcnow(),
         )
 
     def _to_case_dict(self, model: CaseModel) -> dict:

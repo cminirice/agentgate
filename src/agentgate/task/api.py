@@ -12,9 +12,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from .domain import (
-    CaseExecution, Dataset, EvalTask, TaskRun, TaskStatus,
+    CaseExecution, EvalTask, TaskRun, TaskStatus,
     TargetAgentEntity,
 )
+from agentgate.domain.case import Dataset, Case
 from .service import SchedulerService, TaskExecutionService
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,7 @@ async def list_tasks(
     scheduler = get_scheduler_service()
 
     tasks = []
+    total_elements = 0
     if scheduler.repository:
         tasks = scheduler.repository.list_tasks(
             status=status,
@@ -94,14 +96,20 @@ async def list_tasks(
             page=page,
             size=size,
         )
+        total_elements = scheduler.repository.count_tasks(
+            status=status,
+            target_id=target_id,
+        )
+
+    total_pages = (total_elements + size - 1) // size if total_elements > 0 else 0
 
     return {
         "code": 0,
         "message": "success",
         "data": {
             "content": [t.to_dict() for t in tasks],
-            "total_elements": len(tasks),
-            "total_pages": 1,
+            "total_elements": total_elements,
+            "total_pages": total_pages,
             "page": page,
             "size": size,
         },
@@ -138,24 +146,32 @@ async def start_task(task_id: str) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail="Task not found")
 
         try:
-            # 获取测评集下的实际用例数量（从数据集服务获取）
-            case_count = _get_dataset_case_count(task.dataset_id)
+            # 获取数据集版本信息（包含所有Case和CaseTurn）
+            dataset_version_info = _get_dataset_version(task.dataset_id)
+            cases_data = dataset_version_info.get("cases", [])
+            case_count = len(cases_data)
 
-            # 创建智能体快照
+            # 获取评测对象信息并创建快照
+            target_info = _get_target_info(task.target_id)
             target_snapshot_id = scheduler.repository.create_target_snapshot(
                 target_id=task.target_id,
-                agent_type="SKILL",  # 默认类型，实际应从配置获取
-                snapshot_data={"target_id": task.target_id},
+                agent_name=target_info.get("agent_name", ""),
+                agent_type=target_info.get("agent_type", "REMOTE_AGENT"),
+                config=target_info.get("config", {}),
+                status=target_info.get("status", "ACTIVE"),
             )
 
-            # 创建测评集快照
+            # 获取测评集信息并创建快照
+            dataset_info = dataset_version_info.get("dataset", {})
             dataset_snapshot_id = scheduler.repository.create_dataset_snapshot(
                 dataset_id=task.dataset_id,
-                snapshot_data={"dataset_id": task.dataset_id},
-                case_count=case_count,
+                name=dataset_info.get("name", ""),
+                description=dataset_info.get("description", ""),
+                purpose=dataset_info.get("purpose", "standard"),
+                archived=dataset_info.get("archived", False),
             )
 
-            # 创建评估器快照
+            # 评估器快照
             evaluator_snapshot_id = scheduler.repository.create_evaluator_snapshot(
                 evaluator_id=task.evaluator_id,
                 snapshot_data={"evaluator_id": task.evaluator_id},
@@ -166,7 +182,7 @@ async def start_task(task_id: str) -> dict[str, Any]:
             task.dataset_snapshot_id = dataset_snapshot_id
             task.evaluator_snapshot_id = evaluator_snapshot_id
 
-            # 启动任务
+            # 启动任务 - 状态变为 PENDING
             task = scheduler.start_task(task)
             scheduler.repository.update_task(task)
 
@@ -367,15 +383,87 @@ async def list_run_cases(run_id: str) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail="Repository not available")
 
 
-def _get_dataset_case_count(dataset_id: str) -> int:
-    """从数据集服务获取用例数量"""
+def _get_dataset_version(dataset_id: str) -> dict:
+    """从数据集服务获取完整的数据集版本信息"""
     try:
         from src.agentgate.server.application import get_datasets_service
         datasets_service = get_datasets_service()
         if datasets_service:
             version = datasets_service.get_version(dataset_id, 1)
-            if version and version.cases:
-                return len(version.cases)
+            if version:
+                # 返回数据集信息和用例列表
+                return {
+                    "dataset": {
+                        "id": dataset_id,
+                        "name": getattr(version, "dataset_name", ""),
+                        "description": getattr(version, "dataset_description", ""),
+                        "purpose": "standard",
+                        "archived": False,
+                    },
+                    "cases": [
+                        {
+                            "id": case.id,
+                            "name": getattr(case, "name", ""),
+                            "initial_state": getattr(case, "initial_state", {}),
+                            "category": str(getattr(case, "category", "positive")),
+                            "difficulty": str(getattr(case, "difficulty", "medium")),
+                            "tags": ",".join(getattr(case, "tags", [])),
+                            "notes": getattr(case, "notes", ""),
+                            "turns": _get_case_turns(case),
+                        }
+                        for case in (version.cases or [])
+                    ],
+                }
     except Exception as e:
-        logger.error(f"获取数据集用例数量失败: {e}")
-    return 0
+        logger.error(f"获取数据集版本失败: {e}")
+    return {"dataset": {}, "cases": []}
+
+
+def _get_case_turns(case: Any) -> list:
+    """从Case对象中提取CaseTurn信息"""
+    try:
+        turns = getattr(case, "turns", []) or []
+        return [
+            {
+                "id": getattr(turn, "id", ""),
+                "input": dict(getattr(turn, "input", {})),
+                "expected_skill": getattr(turn, "expected_skill", "") or "",
+                "expectations": ",".join([
+                    exp.model_dump_json() if hasattr(exp, "model_dump_json") else str(exp)
+                    for exp in (getattr(turn, "expectations", []) or [])
+                ]),
+                "required_tools": ",".join(getattr(turn, "required_tools", []) or []),
+                "forbidden_tools": ",".join(getattr(turn, "forbidden_tools", []) or []),
+                "policy_rules": ",".join(getattr(turn, "policy_rules", []) or []),
+                "notes": getattr(turn, "notes", "") or "",
+            }
+            for turn in turns
+        ]
+    except Exception as e:
+        logger.error(f"获取用例轮次失败: {e}")
+        return []
+
+
+def _get_target_info(target_id: str) -> dict:
+    """从版本注册表获取评测对象信息"""
+    try:
+        from src.agentgate.server.application import get_datasets_service
+        datasets_service = get_datasets_service()
+        if datasets_service:
+            versions = datasets_service.versions()
+            for v in versions:
+                if v.get("id") == target_id:
+                    return {
+                        "agent_name": v.get("label", ""),
+                        "agent_type": v.get("adapter_type", "REMOTE_AGENT"),
+                        "config": {"endpoint": v.get("endpoint"), "credential_ref": v.get("credential_ref")},
+                        "status": "ACTIVE",
+                    }
+    except Exception as e:
+        logger.error(f"获取评测对象信息失败: {e}")
+    return {
+        "agent_name": target_id,
+        "agent_type": "REMOTE_AGENT",
+        "config": {},
+        "status": "ACTIVE",
+    }

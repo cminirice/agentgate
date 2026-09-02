@@ -5,8 +5,6 @@ Domain models tests.
 import pytest
 from agentgate.task.domain import (
     AgentType,
-    Case,
-    Dataset,
     EvaluationResult,
     EvaluatorType,
     EvaluatorEntity,
@@ -18,6 +16,7 @@ from agentgate.task.domain import (
     generate_uuid,
     utcnow,
 )
+from agentgate.domain.case import Case, Dataset
 
 
 def test_trace_info():
@@ -69,35 +68,36 @@ def test_dataset():
     dataset = Dataset(
         name="Test Dataset",
         description="A test dataset",
-        created_by="admin",
     )
     assert dataset.name == "Test Dataset"
-    assert dataset.status == "ACTIVE"
+    assert dataset.archived == False
 
-    data = dataset.to_dict()
+    data = dataset.model_dump(mode="json")
     assert data["name"] == "Test Dataset"
-    assert data["created_by"] == "admin"
+    assert data["description"] == "A test dataset"
 
 
 def test_case():
     """测试Case"""
+    from agentgate.domain.case import CaseTurn
+
     case = Case(
-        dataset_id="dataset-123",
         name="Test Case",
-        case_data={
-            "dialog_rounds": [
-                {"round": 1, "user_input": "Hello", "expected_response": "Hi"},
-                {"round": 2, "user_input": "How are you?", "expected_response": "I'm fine"},
-            ]
-        },
-        tags="test,hello",
+        turns=(
+            CaseTurn(
+                input={"user_input": "Hello", "expected_response": "Hi"},
+            ),
+            CaseTurn(
+                input={"user_input": "How are you?", "expected_response": "I'm fine"},
+            ),
+        ),
+        tags=("test", "hello"),
     )
-    assert case.dataset_id == "dataset-123"
     assert case.name == "Test Case"
 
-    rounds = case.dialog_rounds
-    assert len(rounds) == 2
-    assert rounds[0]["user_input"] == "Hello"
+    turns = case.turns
+    assert len(turns) == 2
+    assert turns[0].input["user_input"] == "Hello"
 
 
 def test_evaluator_entity():
@@ -190,3 +190,20 @@ def test_utcnow():
     """测试UTC时间生成"""
     now = utcnow()
     assert now is not None
+
+
+def test_utcnow_returns_beijing_time():
+    """测试utcnow返回北京时间(UTC+8)"""
+    from datetime import datetime, timezone, timedelta
+    BEIJING_TZ = timezone(timedelta(hours=8))
+
+    now = utcnow()
+    beijing_now = datetime.now(BEIJING_TZ)
+
+    # 误差在2秒内（考虑执行时间）
+    diff = abs((now - beijing_now).total_seconds())
+    assert diff < 2, f"utcnow返回的时间与北京时间差异超过2秒: utcnow={now}, 北京时间={beijing_now}"
+
+    # 验证时区信息
+    assert now.tzinfo is not None, "utcnow返回的时间应该有时区信息"
+    assert now.tzinfo == BEIJING_TZ, f"utcnow应该返回北京时间(UTC+8)，实际返回: {now.tzinfo}"

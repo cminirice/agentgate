@@ -56,7 +56,6 @@ function formatDate(dateStr: string | undefined | null) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZone: 'Asia/Shanghai',
   })
 }
 
@@ -181,8 +180,8 @@ onMounted(() => {
         <ElDescriptionsItem label="开始时间">{{ formatDate(run.started_at) }}</ElDescriptionsItem>
       </ElDescriptions>
 
-      <!-- 智能体快照信息 -->
-      <ElDescriptions v-if="targetSnapshot" title="智能体快照" :column="2" border style="margin-bottom: var(--spacing-lg)">
+      <!-- 评测对象快照信息 -->
+      <ElDescriptions v-if="targetSnapshot" title="评测对象快照" :column="2" border style="margin-bottom: var(--spacing-lg)">
         <ElDescriptionsItem label="快照ID">{{ targetSnapshot.id }}</ElDescriptionsItem>
         <ElDescriptionsItem label="类型">{{ targetSnapshot.agent_type || '-' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="配置信息" :span="2">
