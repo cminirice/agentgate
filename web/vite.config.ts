@@ -24,7 +24,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.AGENTGATE_API_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
     },
