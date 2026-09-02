@@ -190,3 +190,20 @@ def test_utcnow():
     """测试UTC时间生成"""
     now = utcnow()
     assert now is not None
+
+
+def test_utcnow_returns_beijing_time():
+    """测试utcnow返回北京时间(UTC+8)"""
+    from datetime import datetime, timezone, timedelta
+    BEIJING_TZ = timezone(timedelta(hours=8))
+
+    now = utcnow()
+    beijing_now = datetime.now(BEIJING_TZ)
+
+    # 误差在2秒内（考虑执行时间）
+    diff = abs((now - beijing_now).total_seconds())
+    assert diff < 2, f"utcnow返回的时间与北京时间差异超过2秒: utcnow={now}, 北京时间={beijing_now}"
+
+    # 验证时区信息
+    assert now.tzinfo is not None, "utcnow返回的时间应该有时区信息"
+    assert now.tzinfo == BEIJING_TZ, f"utcnow应该返回北京时间(UTC+8)，实际返回: {now.tzinfo}"

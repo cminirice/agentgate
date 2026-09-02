@@ -44,7 +44,6 @@ function formatDate(dateStr: string | undefined | null) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZone: 'Asia/Shanghai',
   })
 }
 
@@ -92,9 +91,9 @@ onMounted(() => {
             {{ getStatusInfo(task.status).label }}
           </ElTag>
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="智能体">{{ task.target_name || task.target_id }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="测评集">{{ task.dataset_name || task.dataset_id }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="评估器">{{ task.evaluator_name || task.evaluator_id }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="评测对象快照">{{ task.target_name || task.target_id }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="评测集快照">{{ task.dataset_name || task.dataset_id }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="评估器快照">{{ task.evaluator_name || task.evaluator_id }}</ElDescriptionsItem>
         <ElDescriptionsItem label="创建时间">{{ formatDate(task.created_at) }}</ElDescriptionsItem>
       </ElDescriptions>
 

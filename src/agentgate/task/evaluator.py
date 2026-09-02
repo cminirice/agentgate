@@ -63,28 +63,32 @@ class RuleEvaluator(Evaluator):
             rule_weight = rule.get("weight", 1.0)
 
             if rule_type == "contains":
-                if rule_value in agent_response:
+                matched = rule_value.lower() in agent_response.lower()
+                if matched:
                     passed_count += 1
                     reasons.append(f"规则通过：包含 '{rule_value}'")
                 else:
                     reasons.append(f"规则失败：未包含 '{rule_value}'")
 
             elif rule_type == "not_contains":
-                if rule_value not in agent_response:
+                matched = rule_value.lower() not in agent_response.lower()
+                if matched:
                     passed_count += 1
                     reasons.append(f"规则通过：不包含 '{rule_value}'")
                 else:
                     reasons.append(f"规则失败：包含 '{rule_value}'")
 
             elif rule_type == "regex":
-                if re.search(rule_value, agent_response):
+                matched = bool(re.search(rule_value, agent_response))
+                if matched:
                     passed_count += 1
                     reasons.append(f"规则通过：匹配正则 '{rule_value}'")
                 else:
                     reasons.append(f"规则失败：正则 '{rule_value}' 不匹配")
 
             elif rule_type == "equals":
-                if agent_response.strip() == rule_value.strip():
+                matched = agent_response.strip() == rule_value.strip()
+                if matched:
                     passed_count += 1
                     reasons.append(f"规则通过：完全匹配")
                 else:
@@ -92,7 +96,7 @@ class RuleEvaluator(Evaluator):
 
             details[rule_type] = {
                 "value": rule_value,
-                "passed": rule_value in agent_response if rule_type in ["contains", "not_contains"] else True
+                "passed": matched
             }
 
         if total_rules > 0:

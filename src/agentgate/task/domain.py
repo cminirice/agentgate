@@ -10,14 +10,17 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import datetime, timezone, timedelta
 from enum import StrEnum
 from typing import Any
 
+# 北京时区 (UTC+8)
+BEIJING_TZ = timezone(timedelta(hours=8))
+
 
 def utcnow() -> datetime:
-    """返回当前UTC时间"""
-    return datetime.now(UTC)
+    """返回当前北京时间"""
+    return datetime.now(BEIJING_TZ)
 
 
 def generate_uuid() -> str:
@@ -108,87 +111,106 @@ class TargetAgentEntity:
 
 @dataclass
 class TargetSnapshot:
-    """智能体快照"""
+    """评测对象快照"""
     id: str = field(default_factory=generate_uuid)
-    target_id: str = ""
-    agent_type: str = ""
-    snapshot_data: dict = field(default_factory=dict)
+    target_id: str = ""                          # 原对象ID
+    agent_name: str = ""                         # 评测对象名称（原对象业务字段）
+    agent_type: str = ""                         # 评测对象类型（原对象业务字段）
+    config: dict = field(default_factory=dict)   # 配置信息（原对象业务字段）
+    status: str = "ACTIVE"                       # 状态（原对象业务字段）
     created_at: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "target_id": self.target_id,
+            "agent_name": self.agent_name,
             "agent_type": self.agent_type,
-            "snapshot_data": self.snapshot_data,
+            "config": self.config,
+            "status": self.status,
             "created_at": self.created_at.isoformat(),
         }
 
 
 @dataclass
-class Dataset:
-    """测评集实体"""
+class DatasetSnapshot:
+    """测评集快照 - 与 domain.case.Dataset 字段对应"""
     id: str = field(default_factory=generate_uuid)
-    name: str = ""
-    description: str = ""
-    status: str = "ACTIVE"
-    created_by: str = ""
+    dataset_id: str = ""                          # 原对象ID
+    name: str = ""                                # 名称（原对象业务字段）
+    description: str = ""                         # 描述（原对象业务字段）
+    purpose: str = "standard"                     # 用途（原对象业务字段）
+    archived: bool = False                        # 是否归档（原对象业务字段）
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "dataset_id": self.dataset_id,
             "name": self.name,
             "description": self.description,
-            "status": self.status,
-            "created_by": self.created_by,
+            "purpose": self.purpose,
+            "archived": self.archived,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
 
 
 @dataclass
-class Case:
-    """测试用例实体"""
+class CaseSnapshot:
+    """用例快照 - 与 domain.case.Case 字段对应"""
     id: str = field(default_factory=generate_uuid)
-    dataset_id: str = ""
-    name: str = ""
-    case_data: dict = field(default_factory=dict)   # 包含dialog_rounds
-    tags: str = ""
+    case_id: str = ""                             # 原对象ID
+    name: str = ""                                # 名称（原对象业务字段）
+    initial_state: dict = field(default_factory=dict)  # 初始状态（原对象业务字段）
+    category: str = "positive"                    # 类别（原对象业务字段）
+    difficulty: str = "medium"                    # 难度（原对象业务字段）
+    tags: str = ""                                # 标签（原对象业务字段）
+    notes: str = ""                               # 备注（原对象业务字段）
     created_at: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "dataset_id": self.dataset_id,
+            "case_id": self.case_id,
             "name": self.name,
-            "case_data": self.case_data,
+            "initial_state": self.initial_state,
+            "category": self.category,
+            "difficulty": self.difficulty,
             "tags": self.tags,
+            "notes": self.notes,
             "created_at": self.created_at.isoformat(),
         }
 
-    @property
-    def dialog_rounds(self) -> list[dict]:
-        """获取对话轮次列表"""
-        return self.case_data.get("dialog_rounds", [])
-
 
 @dataclass
-class DatasetSnapshot:
-    """测评集快照"""
+class CaseTurnSnapshot:
+    """用例轮次快照 - 与 domain.case.CaseTurn 字段对应"""
     id: str = field(default_factory=generate_uuid)
-    dataset_id: str = ""
-    snapshot_data: dict = field(default_factory=dict)
-    case_count: int = 0
+    case_snapshot_id: str = ""                    # 关联的CaseSnapshot ID
+    case_turn_id: str = ""                        # 原对象ID
+    input: dict = field(default_factory=dict)     # 输入（原对象业务字段）
+    expected_skill: str = ""                      # 期望技能（原对象业务字段）
+    expectations: str = ""                        # 期望值JSON（原对象业务字段）
+    required_tools: str = ""                      # 必需工具JSON（原对象业务字段）
+    forbidden_tools: str = ""                     # 禁用工具JSON（原对象业务字段）
+    policy_rules: str = ""                        # 策略规则JSON（原对象业务字段）
+    notes: str = ""                               # 备注（原对象业务字段）
     created_at: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "dataset_id": self.dataset_id,
-            "snapshot_data": self.snapshot_data,
-            "case_count": self.case_count,
+            "case_snapshot_id": self.case_snapshot_id,
+            "case_turn_id": self.case_turn_id,
+            "input": self.input,
+            "expected_skill": self.expected_skill,
+            "expectations": self.expectations,
+            "required_tools": self.required_tools,
+            "forbidden_tools": self.forbidden_tools,
+            "policy_rules": self.policy_rules,
+            "notes": self.notes,
             "created_at": self.created_at.isoformat(),
         }
 

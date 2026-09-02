@@ -84,7 +84,6 @@ function formatDate(dateStr: string | undefined) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZone: 'Asia/Shanghai',
   })
 }
 
@@ -148,7 +147,7 @@ async function submitCreateDialog() {
     return ElMessage.warning('请输入任务名称')
   }
   if (!createForm.value.target_id) {
-    return ElMessage.warning('请选择智能体')
+    return ElMessage.warning('请选择评测对象')
   }
   if (!createForm.value.dataset_id) {
     return ElMessage.warning('请选择测评集')
@@ -279,7 +278,7 @@ onMounted(async () => {
           <span class="task-name">{{ row.task_name }}</span>
         </template>
       </ElTableColumn>
-      <ElTableColumn prop="target_name" label="智能体" min-width="120">
+      <ElTableColumn prop="target_name" label="评测对象" min-width="120">
         <template #default="{ row }">
           <span>{{ row.target_name || row.target_id }}</span>
         </template>
@@ -380,10 +379,10 @@ onMounted(async () => {
             placeholder="请输入任务名称"
           />
         </ElFormItem>
-        <ElFormItem label="智能体" required>
+        <ElFormItem label="评测对象" required>
           <ElSelect
             v-model="createForm.target_id"
-            placeholder="请选择智能体"
+            placeholder="请选择评测对象"
             style="width: 100%"
           >
             <ElOption

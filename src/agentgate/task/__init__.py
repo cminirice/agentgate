@@ -10,9 +10,9 @@ from .domain import (
     EvaluatorType,
     TargetAgentEntity,
     TargetSnapshot,
-    Dataset,
-    Case,
     DatasetSnapshot,
+    CaseSnapshot,
+    CaseTurnSnapshot,
     EvaluatorEntity,
     EvaluatorSnapshot,
     EvalTask,
@@ -22,6 +22,9 @@ from .domain import (
     TraceInfo,
     EvaluationResultEntity,
 )
+
+# 使用统一的 Dataset 和 Case（从 domain.case 导入）
+from agentgate.domain.case import Dataset, Case
 
 from .agent import (
     AgentExecutor,
@@ -62,6 +65,8 @@ __all__ = [
     "Dataset",
     "Case",
     "DatasetSnapshot",
+    "CaseSnapshot",
+    "CaseTurnSnapshot",
     "EvaluatorEntity",
     "EvaluatorSnapshot",
     "EvalTask",
