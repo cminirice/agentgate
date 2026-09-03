@@ -5,7 +5,7 @@
 """
 
 from __future__ import annotations
-
+from dataclasses import field
 import logging
 from typing import Any
 
@@ -190,7 +190,7 @@ async def start_task(task_id: str) -> dict[str, Any]:
             existing_runs = scheduler.repository.list_runs(task.id)
             run_no = max([r.run_no for r in existing_runs], default=0) + 1
 
-            from .domain import TaskRun, TaskStatus, utcnow
+            from .domain import TaskRun, TaskStatus, utcnow, CaseExecution
             run = TaskRun(
                 task_id=task.id,
                 run_no=run_no,
@@ -201,6 +201,42 @@ async def start_task(task_id: str) -> dict[str, Any]:
                 total_cases=case_count if case_count > 0 else 1,
             )
             scheduler.repository.create_run(run)
+
+            # 为每个 Case 创建快照和用例执行记录
+            for case_data in cases_data:
+                # 创建用例快照
+                case_snapshot_id = scheduler.repository.create_case_snapshot(
+                    case_id=case_data.get("id", ""),
+                    name=case_data.get("name", ""),
+                    initial_state=case_data.get("initial_state", {}),
+                    category=case_data.get("category", "positive"),
+                    difficulty=case_data.get("difficulty", "medium"),
+                    tags=case_data.get("tags", ""),
+                    notes=case_data.get("notes", ""),
+                )
+
+                # 为每个 CaseTurn 创建快照
+                for turn_data in case_data.get("turns", []):
+                    scheduler.repository.create_case_turn_snapshot(
+                        case_snapshot_id=case_snapshot_id,
+                        case_turn_id=turn_data.get("id", ""),
+                        input=turn_data.get("input", {}),
+                        expected_skill=turn_data.get("expected_skill", ""),
+                        expectations=turn_data.get("expectations", ""),
+                        required_tools=turn_data.get("required_tools", ""),
+                        forbidden_tools=turn_data.get("forbidden_tools", ""),
+                        policy_rules=turn_data.get("policy_rules", ""),
+                        notes=turn_data.get("notes", ""),
+                    )
+
+                # 创建用例执行记录
+                case_execution = CaseExecution(
+                    run_id=run.id,
+                    case_id=case_data.get("id", ""),
+                    status=TaskStatus.PENDING,
+                    created_at=utcnow(),
+                )
+                scheduler.repository.create_case_execution(case_execution)
 
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))

@@ -124,30 +124,40 @@ class BackgroundScheduler:
 
         logger.info(f"任务状态变更为 RUNNING: {task.id}")
 
-        # 从数据集服务获取用例（通过内部调用）
-        cases = await self._get_dataset_cases(task.dataset_id)
-        logger.info(f"从数据集加载了 {len(cases)} 个用例")
+        # 从 case_execution 表获取用例
+        cases = await self._get_dataset_cases(run.id)
+        logger.info(f"从 case_execution 表加载了 {len(cases)} 个用例")
 
-        # 为每个用例创建执行记录
+        # 为每个用例更新执行记录
         completed_count = 0
         passed_count = 0
         total_score = 0.0
 
         for case in cases:
             from .domain import CaseExecution
-            case_exec = CaseExecution(
-                run_id=run.id,
-                case_id=case["id"],
-                status=TaskStatus.SUCCESS,
-                score=85.0,
-                passed=True,
-                agent_response=f"模拟响应 for case: {case['name'] or case['id']}",
-            )
-            self.scheduler_service.repository.create_case_execution(case_exec)
-            completed_count += 1
-            passed_count += 1
-            total_score += 85.0
-            logger.info(f"用例执行完成: case_id={case_exec.case_id}, score={case_exec.score}")
+            # 查询现有的用例执行记录
+            logger.info(f"DEBUG: 正在查询 case, run.id={run.id}, case['id']={case['id']}")
+            case_exec_model = self.scheduler_service.repository.get_case_execution_by_case(run.id, case["id"])
+            logger.info(f"DEBUG: 查询结果 case_exec_model = {case_exec_model}")
+            if case_exec_model:
+                # 更新现有记录
+                now = utcnow()
+                case_exec_model.status = TaskStatus.SUCCESS.value
+                case_exec_model.score = 85.0
+                case_exec_model.passed = True
+                case_exec_model.agent_response = f"模拟响应 for case: {case['name'] or case['id']}"
+                case_exec_model.started_at = now
+                case_exec_model.completed_at = now
+                logger.info(f"DEBUG: 设置 started_at = {now}, case_exec_model.started_at = {case_exec_model.started_at}")
+                self.scheduler_service.repository.session.commit()
+                logger.info(f"DEBUG: commit 后 case_exec_model.started_at = {case_exec_model.started_at}")
+
+                completed_count += 1
+                passed_count += 1
+                total_score += 85.0
+                logger.info(f"用例执行完成: case_id={case_exec_model.case_id}, score={case_exec_model.score}")
+            else:
+                logger.warning(f"未找到用例执行记录: run_id={run.id}, case_id={case['id']}")
 
         # 更新执行记录统计
         run.completed_cases = completed_count
@@ -167,32 +177,13 @@ class BackgroundScheduler:
 
         logger.info(f"任务执行完成: {task.id}, 共执行 {completed_count} 个用例")
 
-    async def _get_dataset_cases(self, dataset_id: str) -> list[dict]:
-        """从数据集服务获取用例"""
-        try:
-            # 导入应用层来获取数据集服务
-            from src.agentgate.server.application import get_datasets_service
-            datasets_service = get_datasets_service()
-            if datasets_service:
-                version = datasets_service.get_version(dataset_id, 1)
-                if version and version.cases:
-                    # 将 Pydantic Case 对象转换为字典
-                    cases = []
-                    for case in version.cases:
-                        cases.append({
-                            "id": case.id,
-                            "name": case.name,
-                            "turns": [
-                                {
-                                    "id": turn.id,
-                                    "input": dict(turn.input) if hasattr(turn.input, '__dict__') else turn.input,
-                                    "expected_skill": turn.expected_skill,
-                                }
-                                for turn in case.turns
-                            ] if case.turns else [],
-                        })
-                    logger.info(f"通过数据集服务获取了 {len(cases)} 个用例")
-                    return cases
-        except Exception as e:
-            logger.error(f"获取数据集用例失败: {e}", exc_info=True)
+    async def _get_dataset_cases(self, run_id: str) -> list[dict]:
+        """从 case_execution 表获取用例"""
+        # 直接从 case_execution 表中获取该 run 的用例执行记录
+        case_execs = self.scheduler_service.repository.list_case_executions(run_id)
+        logger.info(f"DEBUG: _get_dataset_cases, run_id={run_id}, case_execs={case_execs}")
+        if case_execs:
+            cases = [{"id": ce["case_id"], "name": ce.get("case_name", ce["case_id"])} for ce in case_execs]
+            logger.info(f"从 case_execution 表获取了 {len(cases)} 个用例, cases={cases}")
+            return cases
         return []

@@ -92,8 +92,8 @@ async function loadData() {
 
     // 获取用例执行列表（通过API）
     try {
-      const response = await http.get<{ content: CaseExecution[] }>(`/api/runs/${runId}/cases`)
-      caseExecutions.value = response.content || []
+      const response = await http.get<CaseExecution[]>(`/api/tasks/runs/${runId}/cases`)
+      caseExecutions.value = response || []
     } catch (e) {
       // 如果API不存在，使用空数组
       caseExecutions.value = []

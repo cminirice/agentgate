@@ -398,6 +398,30 @@ class TaskRepository:
         models = self.session.query(CaseExecutionModel).filter(CaseExecutionModel.run_id == run_id).all()
         return [self._to_case_execution_dict(m) for m in models]
 
+    def get_case_execution_by_case(self, run_id: str, case_id: str) -> CaseExecutionModel | None:
+        """根据run_id和case_id查询用例执行记录"""
+        return self.session.query(CaseExecutionModel).filter(
+            CaseExecutionModel.run_id == run_id,
+            CaseExecutionModel.case_id == case_id
+        ).first()
+
+    def update_case_execution(self, execution: "CaseExecution") -> "CaseExecution":
+        """更新用例执行记录"""
+        model = self.session.query(CaseExecutionModel).filter(
+            CaseExecutionModel.id == execution.id
+        ).first()
+        if model:
+            model.status = execution.status.value if hasattr(execution.status, "value") else execution.status
+            model.score = execution.score
+            model.passed = execution.passed
+            model.agent_response = execution.agent_response
+            model.trace_data = execution.trace_data
+            model.evaluation_result_id = execution.evaluation_result_id
+            model.started_at = execution.started_at
+            model.completed_at = execution.completed_at
+            self.session.commit()
+        return execution
+
     def get_case(self, case_id: str) -> dict | None:
         """获取用例详情"""
         model = self.session.query(CaseModel).filter(CaseModel.id == case_id).first()
@@ -483,7 +507,11 @@ class TaskRepository:
     ) -> str:
         """创建用例快照"""
         from .domain import generate_uuid
+        from agentgate.domain.base import FrozenJsonObject
         snapshot_id = generate_uuid()
+        # 确保 initial_state 是普通 dict 而不是 FrozenJsonObject
+        if isinstance(initial_state, FrozenJsonObject):
+            initial_state = initial_state.to_dict()
         model = CaseSnapshotModel(
             id=snapshot_id,
             case_id=case_id,
@@ -512,7 +540,11 @@ class TaskRepository:
     ) -> str:
         """创建用例轮次快照"""
         from .domain import generate_uuid
+        from agentgate.domain.base import FrozenJsonObject
         snapshot_id = generate_uuid()
+        # 确保 input 是普通 dict 而不是 FrozenJsonObject
+        if isinstance(input, FrozenJsonObject):
+            input = input.to_dict()
         model = CaseTurnSnapshotModel(
             id=snapshot_id,
             case_snapshot_id=case_snapshot_id,
