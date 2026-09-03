@@ -13,6 +13,10 @@ from typing import TYPE_CHECKING
 
 from .domain import TaskRun, TaskStatus, utcnow
 
+# baibo加入
+from ..Agent_Execute.Agent_execute import AgentExecutePerInvocation_id, Target, query_trace
+# 结束
+
 if TYPE_CHECKING:
     from .service import SchedulerService
 
@@ -132,6 +136,34 @@ class BackgroundScheduler:
         completed_count = 0
         passed_count = 0
         total_score = 0.0
+
+        # 插入agent启动相关代码-baibo 0902
+        # 注意：变量名用 agent_exec，避免覆盖方法参数 task（TaskRecord）
+        agent_exec = AgentExecutePerInvocation_id(
+            invocation_id="invocation-001",
+            idempotency_key="idempotency-001",
+            target=Target(
+                type="agent",
+                id="agent-test-task",
+                version_id="v1",
+            ),
+            run_id="run-001",
+            case_id="case-001",
+            turn_id="turn-001",
+            input={"message": "请调研苏州市"},
+            state={},
+        )
+        await asyncio.to_thread(agent_exec.start_agent_http_listening)
+        await asyncio.to_thread(
+            agent_exec.execute_agent_http,
+            target=agent_exec.target,
+            input=agent_exec.input,
+            state=agent_exec.state,
+            invocation_id=agent_exec.invocation_id,
+        )
+        await asyncio.to_thread(agent_exec.start_trace_server)
+        await asyncio.to_thread(query_trace().get_trace, trace_id=agent_exec.invocation_id)
+        # 结束
 
         for case in cases:
             from .domain import CaseExecution
