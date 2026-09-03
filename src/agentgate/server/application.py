@@ -297,7 +297,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
     # 初始化任务仓储和服务
     from agentgate.task.repository import Base as TaskBase
-    task_engine = create_engine(f"sqlite:///{db_path}")
+    task_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     TaskBase.metadata.create_all(task_engine)
     TaskSession = sessionmaker(bind=task_engine)
     task_session = TaskSession()

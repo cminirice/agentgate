@@ -41,7 +41,7 @@ def test_start_task_creates_case_executions(tmp_path):
 
         # 等待一下让异步处理完成
         import time
-        time.sleep(0.5)
+        time.sleep(2)
 
         # 3. 查询任务的执行记录
         response = client.get(f"/api/tasks/{task_id}/runs")

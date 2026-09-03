@@ -34,6 +34,9 @@ _execution_service: TaskExecutionService | None = None
 def set_services(scheduler: SchedulerService, execution: TaskExecutionService) -> None:
     """设置服务实例"""
     global _scheduler_service, _execution_service
+    if _scheduler_service is not None:
+        logger.warning("set_services called but _scheduler_service already set! Not overwriting.")
+        return
     _scheduler_service = scheduler
     _execution_service = execution
 

@@ -136,9 +136,7 @@ class BackgroundScheduler:
         for case in cases:
             from .domain import CaseExecution
             # 查询现有的用例执行记录
-            logger.info(f"DEBUG: 正在查询 case, run.id={run.id}, case['id']={case['id']}")
             case_exec_model = self.scheduler_service.repository.get_case_execution_by_case(run.id, case["id"])
-            logger.info(f"DEBUG: 查询结果 case_exec_model = {case_exec_model}")
             if case_exec_model:
                 # 更新现有记录
                 now = utcnow()
@@ -148,9 +146,7 @@ class BackgroundScheduler:
                 case_exec_model.agent_response = f"模拟响应 for case: {case['name'] or case['id']}"
                 case_exec_model.started_at = now
                 case_exec_model.completed_at = now
-                logger.info(f"DEBUG: 设置 started_at = {now}, case_exec_model.started_at = {case_exec_model.started_at}")
                 self.scheduler_service.repository.session.commit()
-                logger.info(f"DEBUG: commit 后 case_exec_model.started_at = {case_exec_model.started_at}")
 
                 completed_count += 1
                 passed_count += 1
@@ -181,9 +177,8 @@ class BackgroundScheduler:
         """从 case_execution 表获取用例"""
         # 直接从 case_execution 表中获取该 run 的用例执行记录
         case_execs = self.scheduler_service.repository.list_case_executions(run_id)
-        logger.info(f"DEBUG: _get_dataset_cases, run_id={run_id}, case_execs={case_execs}")
         if case_execs:
             cases = [{"id": ce["case_id"], "name": ce.get("case_name", ce["case_id"])} for ce in case_execs]
-            logger.info(f"从 case_execution 表获取了 {len(cases)} 个用例, cases={cases}")
+            logger.info(f"从 case_execution 表获取了 {len(cases)} 个用例")
             return cases
         return []
