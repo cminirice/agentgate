@@ -86,10 +86,42 @@ async def list_tasks(
     target_id: str | None = None,
     page: int = 0,
     size: int = 10,
+    stats_only: bool = False,
 ) -> dict[str, Any]:
-    """查询任务列表"""
+    """查询任务列表，或获取统计数据（当 stats_only=true 时）"""
+    import logging
+    import sys
+    logger = logging.getLogger(__name__)
+    print(f"DEBUG: stats_only={stats_only}, type={type(stats_only)}, file={__file__}", file=sys.stderr)
+    logger.info(f"DEBUG: stats_only={stats_only}, type={type(stats_only)}")
     scheduler = get_scheduler_service()
 
+    # 如果请求统计数据，返回统计信息
+    if stats_only:
+        stats = {
+            "total": 0,
+            "running": 0,
+            "pending": 0,
+            "success": 0,
+            "fail": 0,
+            "new": 0,
+            "terminated": 0,
+        }
+        if scheduler.repository:
+            stats["total"] = scheduler.repository.count_tasks()
+            stats["new"] = scheduler.repository.count_tasks(status="NEW")
+            stats["pending"] = scheduler.repository.count_tasks(status="PENDING")
+            stats["running"] = scheduler.repository.count_tasks(status="RUNNING")
+            stats["success"] = scheduler.repository.count_tasks(status="SUCCESS")
+            stats["fail"] = scheduler.repository.count_tasks(status="FAIL")
+            stats["terminated"] = scheduler.repository.count_tasks(status="TERMINATED")
+        return {
+            "code": 0,
+            "message": "success",
+            "data": stats,
+        }
+
+    # 否则返回任务列表
     tasks = []
     total_elements = 0
     if scheduler.repository:

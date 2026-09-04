@@ -75,6 +75,16 @@ export interface TaskListResponse {
   size: number
 }
 
+export interface TaskStats {
+  total: number
+  new: number
+  pending: number
+  running: number
+  success: number
+  fail: number
+  terminated: number
+}
+
 export interface CreateTaskPayload {
   task_name: string
   target_id: string
@@ -86,6 +96,9 @@ export const tasksApi = {
   // 获取任务列表
   list: (params?: { status?: string; target_id?: string; page?: number; size?: number }) =>
     http.get<TaskListResponse>('/api/tasks', params),
+
+  // 获取任务统计数据
+  stats: () => http.get<TaskStats>('/api/tasks', { stats_only: true }),
 
   // 获取任务详情
   detail: (taskId: string) => http.get<Task>(`/api/tasks/${encodeURIComponent(taskId)}`),

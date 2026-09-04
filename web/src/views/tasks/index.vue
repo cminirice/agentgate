@@ -35,16 +35,24 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 
 // 统计数据
-const stats = computed(() => {
-  const all = tasks.value
-  return {
-    total: all.length,
-    running: all.filter((t) => t.status === 'RUNNING').length,
-    pending: all.filter((t) => t.status === 'PENDING').length,
-    success: all.filter((t) => t.status === 'SUCCESS').length,
-    fail: all.filter((t) => t.status === 'FAIL').length,
-  }
+const stats = ref({
+  total: 0,
+  running: 0,
+  pending: 0,
+  success: 0,
+  fail: 0,
+  new: 0,
+  terminated: 0,
 })
+
+async function loadStats() {
+  try {
+    const response = await tasksApi.stats()
+    stats.value = response
+  } catch (error) {
+    console.error('加载统计数据失败:', error)
+  }
+}
 
 // 创建任务弹窗
 const createDialogVisible = ref(false)
@@ -161,7 +169,7 @@ async function submitCreateDialog() {
     await tasksApi.create(createForm.value)
     ElMessage.success('任务创建成功')
     createDialogVisible.value = false
-    await loadTasks()
+    await Promise.all([loadTasks(), loadStats()])
   } catch (error) {
     ElMessage.error('创建任务失败')
   } finally {
@@ -176,7 +184,7 @@ async function handleStartTask(task: any) {
     })
     await tasksApi.start(task.id)
     ElMessage.success('任务已启动')
-    await loadTasks()
+    await Promise.all([loadTasks(), loadStats()])
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(error.message || '启动任务失败')
@@ -191,7 +199,7 @@ async function handleStopTask(task: any) {
     })
     await tasksApi.stop(task.id, '用户手动停止')
     ElMessage.success('任务已停止')
-    await loadTasks()
+    await Promise.all([loadTasks(), loadStats()])
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(error.message || '停止任务失败')
@@ -206,7 +214,7 @@ async function handleDeleteTask(task: any) {
     })
     await tasksApi.delete(task.id)
     ElMessage.success('任务已删除')
-    await loadTasks()
+    await Promise.all([loadTasks(), loadStats()])
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(error.message || '删除任务失败')
@@ -230,7 +238,7 @@ function viewTaskDetail(task: any) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadTasks(), loadOptions()])
+  await Promise.all([loadTasks(), loadStats(), loadOptions()])
 })
 </script>
 
@@ -242,13 +250,17 @@ onMounted(async () => {
         <div class="stat-value">{{ stats.total }}</div>
         <div class="stat-label">全部任务</div>
       </div>
-      <div class="stat-card running">
-        <div class="stat-value">{{ stats.running }}</div>
-        <div class="stat-label">执行中</div>
+      <div class="stat-card new">
+        <div class="stat-value">{{ stats.new }}</div>
+        <div class="stat-label">新建</div>
       </div>
       <div class="stat-card pending">
         <div class="stat-value">{{ stats.pending }}</div>
         <div class="stat-label">待执行</div>
+      </div>
+      <div class="stat-card running">
+        <div class="stat-value">{{ stats.running }}</div>
+        <div class="stat-label">执行中</div>
       </div>
       <div class="stat-card success">
         <div class="stat-value">{{ stats.success }}</div>
@@ -258,12 +270,16 @@ onMounted(async () => {
         <div class="stat-value">{{ stats.fail }}</div>
         <div class="stat-label">失败</div>
       </div>
+      <div class="stat-card terminated">
+        <div class="stat-value">{{ stats.terminated }}</div>
+        <div class="stat-label">已终止</div>
+      </div>
     </div>
 
     <!-- 操作栏 -->
     <div class="action-bar">
       <ElButton type="primary" @click="openCreateDialog">创建任务</ElButton>
-      <ElButton @click="loadTasks">刷新</ElButton>
+      <ElButton @click="async () => { await loadTasks(); await loadStats(); }">刷新</ElButton>
     </div>
 
     <!-- 任务列表 -->
@@ -485,6 +501,20 @@ onMounted(async () => {
     border-left: 3px solid var(--color-danger);
     .stat-value {
       color: var(--color-danger);
+    }
+  }
+
+  &.new {
+    border-left: 3px solid var(--color-info);
+    .stat-value {
+      color: var(--color-info);
+    }
+  }
+
+  &.terminated {
+    border-left: 3px solid var(--color-info);
+    .stat-value {
+      color: var(--color-info);
     }
   }
 }
